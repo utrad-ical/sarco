@@ -1,9 +1,5 @@
 #!/bin/bash
 
-
-
-cd /home/hanaoka/sarco_v3
-
 INDIR=$1
 OUTDIR=$2
 
@@ -13,12 +9,6 @@ LISTFILE=$OUTDIR/list.txt
 
 > $LISTFILE echo {volume_name}
 >> $LISTFILE echo $INDIR/0.mhd
-
-
-
-
-
-
 
 mkdir -p $OUTPUTROOT
 
