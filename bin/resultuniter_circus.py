@@ -12,7 +12,7 @@ df2 = pd.read_csv(sys.argv[2], encoding='shift_jis')
 
 
 
-d = {"results": {"L1": df1.to_dict(), "L3": df2.to_dict()}}
+d = {"results": {"L1": df1.to_dict(orient='records'), "L3": df2.to_dict(orient='records')}}
 
 print(d)
 
