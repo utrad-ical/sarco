@@ -16,7 +16,7 @@ LISTFILE=$TEMPDIR/list.txt
 mkdir -p $OUTPUTROOT
 
 WORKDIRROOT=$TEMPDIR/work
-RESULTDIR=$OUTPUTROOT/result
+RESULTDIR=$OUTPUTROOT
 
 mkdir -p $WORKDIRROOT
 mkdir -p $RESULTDIR
@@ -45,7 +45,7 @@ python bin/sarcosegmentation.py --mode test --volume_list_file=$WORKDIR_L1/l1mod
 
 python bin/sarcosegmentation.py --mode test --volume_list_file=$WORKDIR_L3/l3mod.txt --z_list_file=$WORKDIR_L3/l3mod.txt --device cuda --workdir=$WORKDIR_L3 --model_file_name=model/l3_segmentation.ckpt --logfilepath=$WORKDIR_L3/log.txt --resultdir=$RESULTDIR --desc=L3
 
-python bin/resultuniter.py $RESULTDIR/__result_L1.csv $RESULTDIR/__result_L3.csv $RESULTDIR/__result_united.csv
+python bin/resultuniter_circus.py $RESULTDIR/__result_L1.csv $RESULTDIR/__result_L3.csv $RESULTDIR/results.json
 
 
 
