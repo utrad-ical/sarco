@@ -5,22 +5,15 @@
   "description": "Evaluates sarcopenia from torso CT",
   "icon": {
     "glyph": "calc",
-    "color": "#ffffff",
+    "color": "#ff00ff",
     "backgroundColor": "#000000"
   },
   "displayStrategy": [
     {
-      "caption": "Results",
-      "type": "VolumeOverlay"
-    },
-    {
-      "feedbackKey": "evaluation",
-      "caption": "Score",
-      "type": "Numeric",
+      "caption": "Raw Results",
+      "type": "Dump",
       "options": {
-        "minimum": 1,
-        "maximum": 5,
-        "multipleOf": 1
+        "maxHeight": 300
       }
     }
   ]
