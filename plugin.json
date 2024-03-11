@@ -1,0 +1,27 @@
+{
+  "type": "CAD",
+  "pluginName": "Sarcopenia",
+  "version": "4.0.0",
+  "description": "Evaluates sarcopenia from torso CT",
+  "icon": {
+    "glyph": "calc",
+    "color": "#ffffff",
+    "backgroundColor": "#000000"
+  },
+  "displayStrategy": [
+    {
+      "caption": "Results",
+      "type": "VolumeOverlay"
+    },
+    {
+      "feedbackKey": "evaluation",
+      "caption": "Score",
+      "type": "Numeric",
+      "options": {
+        "minimum": 1,
+        "maximum": 5,
+        "multipleOf": 1
+      }
+    }
+  ]
+}
