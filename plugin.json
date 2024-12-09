@@ -10,10 +10,86 @@
   },
   "displayStrategy": [
     {
-      "caption": "Raw Results",
-      "type": "Dump",
+      "type": "Gallery",
       "options": {
-        "maxHeight": 300
+        "imageInfo": [
+          {
+            "fileName": "0_L1.ill.png",
+            "labelData": [
+              {
+                "customLabel": "L1"
+              },
+              {
+                "customLabel": "SMA: ",
+                "dataPath": "results.L1.0.L1_SMA"
+              },
+              {
+                "customLabel": "MSMD: ",
+                "dataPath": "results.L1.0.L1_MSMD"
+              },
+              {
+                "customLabel": "VAT: ",
+                "dataPath": "results.L1.0.L1_VAT"
+              },
+              {
+                "customLabel": "SAT: ",
+                "dataPath": "results.L1.0.L1_SAT"
+              }
+            ],
+            "maxHeight": 550,
+            "labelPosition": "top"
+          },
+          {
+            "fileName": "0_L1.tricolor.png",
+            "labelData": [
+              {
+                "customLabel": "TriColor"
+              }
+            ],
+            "maxHeight": 700,
+            "labelPosition": "top"
+          },
+          {
+            "fileName": "0_L3.ill.png",
+            "maxHeight": 550,
+            "labelData": [
+              {
+                "customLabel": "L3"
+              },
+              {
+                "customLabel": "SMA: ",
+                "dataPath": "results.L3.0.L3_SMA"
+              },
+              {
+                "customLabel": "MSMD: ",
+                "dataPath": "results.L3.0.L3_MSMD"
+              },
+              {
+                "customLabel": "VAT: ",
+                "dataPath": "results.L3.0.L3_VAT"
+              },
+              {
+                "customLabel": "SAT: ",
+                "dataPath": "results.L3.0.L3_SAT"
+              }
+            ],
+            "labelPosition": "top"
+          },
+          {
+            "fileName": "0_L3.tricolor.png",
+            "labelData": [
+              {
+                "customLabel": "TriColor"
+              }
+            ],
+            "maxHeight": 700,
+            "labelPosition": "top"
+          }
+        ],
+        "imageCountsPerColumn": [
+          2,
+          2
+        ]
       }
     }
   ]
