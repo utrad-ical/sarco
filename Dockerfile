@@ -1,5 +1,4 @@
-
-FROM nvcr.io/nvidia/pytorch:23.05-py3
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
 RUN pip install --no-cache-dir numpy scipy scikit-learn scikit-image pandas \
                                matplotlib cython ipython statsmodels msgpack \
