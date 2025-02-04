@@ -79,8 +79,8 @@ def slice_preparation(grayVolume, labelVolume_orig, labelused, usingz = None, to
     
     basez = usingz*grayVolume.GetSpacing()[2]
     
-    gR = volumeresampler.resample(grayVolume, basez, new_voxel_size, new_matrix_size)
-    lR = volumeresampler.resample(labelImage, basez, new_voxel_size, new_matrix_size)
+    gR = volumeresampler.resample(grayVolume, basez, new_voxel_size, new_matrix_size, is_label = False, apply_filter = True)
+    lR = volumeresampler.resample(labelImage, basez, new_voxel_size, new_matrix_size, is_label = True, apply_filter = False)
 
 
 
@@ -396,6 +396,9 @@ def main(mode : str,
             else:
                 namebody = str(Path(namebody).stem)
             
+            while namebody in namebodies:
+                namebody = namebody + '_'
+
             namebodies.append(namebody)
             
             namebody = namebody + "_" + desc
@@ -485,8 +488,7 @@ if __name__ == '__main__':
     parser.add_argument('--desc', help = 'description label',
                         type=str, default='result')
     parser.add_argument('--trunkextract', help = 'turn on a preprocessing (body trunk extract)',
-                        action='store_true', default='result')
-                        
+                        action='store_true', default=True)
 
 
 

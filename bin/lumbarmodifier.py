@@ -357,9 +357,9 @@ def main(mode : str,
         likelihoods_cases = np.ndarray((num_cases))
         
         for ind_case in range(num_cases):
-            print(ind_case)
-            print(test_label[case_indices == ind_case])
-            print(likelihoods[case_indices == ind_case])
+            # print(ind_case)
+            # print(test_label[case_indices == ind_case])
+            # print(likelihoods[case_indices == ind_case])
             try:
                 zestimates[ind_case] = np.argmax(likelihoods[case_indices == ind_case]) + basezs[ind_case]
                 likelihoods_cases[ind_case] = np.max(likelihoods[case_indices == ind_case])

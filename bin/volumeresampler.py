@@ -5,10 +5,11 @@ import numpy as np
 
 import SimpleITK as sitk
 
+import scipy.ndimage
 
 
-def resample(image, z_base_shift_mm : float, new_voxel_size, new_matrix_size = None, is_label = False):
 
+def resample(image, z_base_shift_mm : float, new_voxel_size, new_matrix_size = None, is_label = False, apply_filter = False):
 
     # resize given image
 
@@ -30,10 +31,10 @@ def resample(image, z_base_shift_mm : float, new_voxel_size, new_matrix_size = N
     if new_matrix_size is not None:
         gNewSize = new_matrix_size
     else:
-        gNewSize = np.floor( 0.5 + np.array(gOldSpac)*np.array(gOldSize)/np.array(new_voxel_size) ).astype("uint32")
+        gNewSize = np.floor( 0.5 + np.array(gOldSpac)*np.array(gOldSize)/np.array(new_voxel_size) ).astype("uint32").tolist()
 
     resample.SetSize(list(gNewSize))
-    gNewsize = resample.GetSize()
+    gNewSize = resample.GetSize()
     
     gNewOrig = np.array(gOldOrig) + (np.array(gOldSpac)*np.array(gOldSize))/2 - (np.array(gNewSize)*np.array(gNewSpac))/2
 
@@ -59,6 +60,13 @@ def resample(image, z_base_shift_mm : float, new_voxel_size, new_matrix_size = N
         resample.SetDefaultPixelValue(0)
         newImage = resample.Execute(image)
     else:
+        if apply_filter:
+            zratio = gNewSpac[2] / gOldSpac[2]
+            if zratio > 1.0:
+                # apply gaussian filter along z-axis
+                srgif = sitk.SmoothingRecursiveGaussianImageFilter()
+                srgif.SetSigma(np.array((0.01, 0.01, zratio/2.0)).astype(np.float64).tolist())
+                image = srgif.Execute(image)
         resample.SetInterpolator(sitk.sitkLinear)
         resample.SetDefaultPixelValue(-1000)
         newImage = resample.Execute(image)

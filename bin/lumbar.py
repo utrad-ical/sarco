@@ -21,12 +21,12 @@ import torchvision.transforms
 
 import readfiles
 import volumeresampler
+import extract_trunk
 
 
 
 
-
-DEFAULT_ORIGINAL_SLICE_THICKNESS = 5            # mm
+DEFAULT_ORIGINAL_SLICE_THICKNESS = 5.0            # mm
 INPUT_VOXEL_SIZE=1      # mm, input for Unet
 INPUT_SLICE_THICKNESS=1.666666666667    # mm
 INPUT_X_SIZE = 512      # voxels
@@ -125,8 +125,13 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier)
                 resample.SetDefaultPixelValue(0)
                 lR = resample.Execute(labelImage)
 
-            # modify grayscale and label
+            # kill arms
+            gR = extract_trunk.kill_arms(gR)
+
+            # get array
             gRarr = sitk.GetArrayFromImage(gR)
+            
+            # modify grayscale and label
             gRarr[gRarr<100] = 100
             gRarr[1000<gRarr] = 1000
             lRarr = sitk.GetArrayFromImage(lR)

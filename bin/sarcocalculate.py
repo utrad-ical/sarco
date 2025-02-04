@@ -22,6 +22,8 @@ OUTPUTGRAYSCALEIMAGE = True
 
 def get_visceral_region(label_muscle : np.array, voxelsize : float, debug = False):
 
+    label_muscle = np.copy(label_muscle)
+
     # get the median point
 #    (g_y, g_x) = scipy.ndimage.center_of_mass(label_muscle)
     g_x_where = np.where(0<np.sum(label_muscle, axis=0))
@@ -220,40 +222,47 @@ def calculate(grayimage : sitk.Image,
         z = 0
         gray = np.zeros_like(grayarray[z,:,:])
         label_muscle = np.zeros_like(labelarray[z,:,:])
-        label_visceral = label_muscle
-        label_superficial = label_muscle
+        label_visceral = np.zeros_like(labelarray[z,:,:])
+        label_superficial = np.zeros_like(labelarray[z,:,:])
     else:
         z = np.argmax(zsum)
         print(f"{z=}")
 
-        # get gray image
-        gray = grayarray[z,:,:]
-
-        # kill arms
-        gray_arm_removed = BODY_TRUNK_THRESHOLD_HU < extract_trunk.extract(gray)
-
         # get muscle image
         label_muscle = labelarray[z,:,:] == 1
 
-        # get body trunk label
-        label_trunk = get_largest_connected_component(BODY_TRUNK_THRESHOLD_HU < gray)
-        label_trunk = scipy.ndimage.binary_fill_holes(label_trunk)
-        label_trunk = scipy.ndimage.binary_opening(label_trunk, np.ones((3,3)))
-        label_trunk = scipy.ndimage.binary_erosion(label_trunk, np.ones((3,3)))
-        label_trunk = scipy.ndimage.binary_erosion(label_trunk, np.ones((3,3)), iterations=12)
-        label_trunk = get_largest_connected_component(label_trunk)
-        label_trunk = scipy.ndimage.binary_dilation(label_trunk, np.ones((3,3)), iterations=12)
+        if 0: # obsolete
+
+            # get gray image
+            gray = grayarray[z,:,:]
+
+            # kill arms
+            gray_arm_removed = BODY_TRUNK_THRESHOLD_HU < extract_trunk.extract(gray)
+
+            # get body trunk label
+            label_trunk = get_largest_connected_component(BODY_TRUNK_THRESHOLD_HU < gray)
+            label_trunk = scipy.ndimage.binary_fill_holes(label_trunk)
+            label_trunk = scipy.ndimage.binary_opening(label_trunk, np.ones((3,3)))
+            label_trunk = scipy.ndimage.binary_erosion(label_trunk, np.ones((3,3)))
+            label_trunk = scipy.ndimage.binary_erosion(label_trunk, np.ones((3,3)), iterations=12)
+            label_trunk = get_largest_connected_component(label_trunk)
+            label_trunk = scipy.ndimage.binary_dilation(label_trunk, np.ones((3,3)), iterations=12)
+            
+            # kill arms
+            gray_arm_removed_dilated = scipy.ndimage.binary_dilation(gray_arm_removed, np.ones((3,3)), iterations = 2)
+            label_trunk = np.logical_and(label_trunk, gray_arm_removed_dilated)
         
-        # kill arms
-        gray_arm_removed_dilated = scipy.ndimage.binary_dilation(gray_arm_removed, np.ones((3,3)), iterations = 2)
-        label_trunk = np.logical_and(label_trunk, gray_arm_removed_dilated)
+        else:
+            gray_arm_removed = sitk.GetArrayFromImage(extract_trunk.kill_arms(grayimage))
+            gray = gray_arm_removed[z,:,:]
+            label_trunk = BODY_TRUNK_THRESHOLD_HU < gray
         
         # get visceral region label
         label_visceral = get_visceral_region(label_muscle, voxel_size)
 
         # exclusion
         label_visceral[0<label_muscle] = 0
-        label_superficial = label_trunk
+        label_superficial = np.copy(label_trunk)
         label_superficial[0<label_visceral] = 0
         label_superficial[0<label_muscle] = 0
     
