@@ -53,6 +53,11 @@ if __name__ == '__main__':
         # case name
         case_name = src.stem
         ext = src.suffix
+        if(str(ext) == '.gz'):
+            print(case_name[-4:])
+            assert(case_name[-4:] =='.nii')
+            case_name = case_name[:-4]
+            ext = '.nii.gz'
         if case_name in list(case_name_dict.keys()):
             # duplicated name
             index = len(case_name_dict[case_name])

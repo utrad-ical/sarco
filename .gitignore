@@ -161,4 +161,4 @@ cython_debug/
 
 
 
-bin/processmodifiedsegmentation_C3.BAK
+*.BAK
