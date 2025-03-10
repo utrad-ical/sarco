@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir toposort
 RUN pip install --no-cache-dir einops tqdm
 
 # copy
+COPY plugin.json /
 COPY ./ /workspace
 
 CMD bash /workspace/processsingle.sh /circus/in /circus/out
