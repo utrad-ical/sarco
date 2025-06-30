@@ -88,12 +88,27 @@ if __name__ == '__main__':
             
     csvfilepath = str(Path(output_path) / Path("modified.csv"))
     
-    dfL3 = pd.DataFrame.from_records(metriclist["L3"]).set_index('id')    
-    dfL3.to_csv(csvfilepath+"_L3.csv")
-    
-    dfL1 = pd.DataFrame.from_records(metriclist["L1"]).set_index('id')
-    dfL1.to_csv(csvfilepath+"_L1.csv")
+    try:
+        dfL3 = pd.DataFrame.from_records(metriclist["L3"]).set_index('id')    
+        dfL3.to_csv(csvfilepath+"_L3.csv")
+    except BaseException as e:
+        print("L3 writing failed")
+        print(e)
+        pass
 
-#    pd.DataFrame.merge(dfL1, dfL3, on='id').to_csv(csvfilepath)
-    dfL1.join(dfL3, on='id', how='outer').to_csv(csvfilepath)
+    try:
+        dfL1 = pd.DataFrame.from_records(metriclist["L1"]).set_index('id')
+        dfL1.to_csv(csvfilepath+"_L1.csv")
+    except BaseException as e:
+        print("L1 writing failed")
+        print(e)
+        pass
+
+    try:
+        dfL1.join(dfL3, on='id', how='outer').to_csv(csvfilepath)
+    except BaseException as e:
+        print("L1+L3 writing failed")
+        print(e)
+        pass
+    
 

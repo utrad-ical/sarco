@@ -57,7 +57,8 @@ def resample(image, z_base_shift_mm : float, new_voxel_size, new_matrix_size = N
 
     if is_label:
         resample.SetInterpolator(sitk.sitkNearestNeighbor)
-        resample.SetDefaultPixelValue(0)
+#        resample.SetDefaultPixelValue(0)
+        resample.SetUseNearestNeighborExtrapolator(True)
         newImage = resample.Execute(image)
     else:
         if apply_filter:

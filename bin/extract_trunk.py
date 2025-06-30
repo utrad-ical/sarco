@@ -82,6 +82,7 @@ def kill_arms(volume: sitk.Image) -> sitk.Image:
 
     trunk_label = volumeresampler.resample(trunk_label_thick, 0, volume.GetSpacing(), volume.GetSize(), is_label = True)
 
+
     arr1 = sitk.GetArrayFromImage(volume)
     arr2 = sitk.GetArrayFromImage(trunk_label)
     arr1[arr2 == 0] = -1000
