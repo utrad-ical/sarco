@@ -64,8 +64,8 @@ def write_sag_fusion_res_ill(detectedLabelVolume,
         plt.imsave(sag_filename, sag)
     
     # (re)make the fusion and res
-    dlarr3d = (sitk.GetArrayFromImage(dlR).astype('int16') > 0).astype('float32')
-    alarr3d = (sitk.GetArrayFromImage(alR).astype('int16') > 0).astype('float32')
+    dlarr3d = (sitk.GetArrayFromImage(dlR).astype('int16')).astype('float32')
+    alarr3d = (sitk.GetArrayFromImage(alR).astype('int16')).astype('float32')
     garr3d = sitk.GetArrayFromImage(gR)
 
     xysum = np.sum(np.sum(dlarr3d, axis=2), axis=1)
@@ -79,7 +79,7 @@ def write_sag_fusion_res_ill(detectedLabelVolume,
         true_label = alarr3d[detectedslicenum, :, :][:,:,np.newaxis]
         estim_label = dlarr3d[detectedslicenum, :, :][:,:,np.newaxis]
         gray = (np.clip(garr3d[detectedslicenum, :, :][:,:,np.newaxis], -100, 155)+100)/255
-    fus = np.concatenate((estim_label*.6+gray*.4, gray*.4, estim_label*.5+gray*.5), 2)
+    fus = np.concatenate(((estim_label==1)*.6+gray*.4, (estim_label>1)*.6+gray*.4, estim_label*.1+gray*.5), 2)
     res = np.concatenate((estim_label, true_label, estim_label), 2)
 
     fus = np.clip(fus, 0., 1.)

@@ -57,9 +57,23 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier)
     zs = []
     ztrues = []
     original_slice_thicknesses = []
+
+    # malloc
+    for N in readfiles.counter(volume_list):
+        pass
+    N=N+1
+    training_gray = np.zeros([N*data_augmentation_multiplier,NUM_FEATURE_IMAGE,INPUT_Z_SIZE,INPUT_X_SIZE], dtype='float32')
+    training_label = np.zeros([N*data_augmentation_multiplier,2,INPUT_Z_SIZE,INPUT_X_SIZE], dtype='float32')
     
-    for (grayImage, labelImage) in readfiles.reader(volume_list):
-        
+    # main loop
+    for n, (grayImage, labelImage) in enumerate(readfiles.reader(volume_list)):
+
+        print(f"sample #{n}/{N}: ", end="", flush=True)
+
+        # get original voxel size
+        original_slice_thickness = labelImage.GetSpacing()[2]
+        original_slice_thicknesses.append(original_slice_thickness)
+
         # true label
         lorig = sitk.GetArrayFromImage(labelImage)
         
@@ -70,71 +84,39 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier)
         else:
             ztrue = np.argmax(sumlabel)
             
-        # get original voxel size
-        original_slice_thicknesses.append(labelImage.GetSpacing()[2])
+        # first resize to (1mm,1mm,1.6666667mm)
+        print("resampling...", end="", flush=True)
+        new_voxel_size = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, INPUT_SLICE_THICKNESS]
+        new_matrix_size_elongated = [INPUT_X_SIZE, INPUT_X_SIZE, INPUT_Z_SIZE*2]
+
+        # get an enlarged volume to allow for data augmentation
+        grayImage = volumeresampler.resample(grayImage, -50*original_slice_thickness, new_voxel_size, new_matrix_size_elongated, is_label = False, apply_filter = True)
+        labelImage = volumeresampler.resample(labelImage, -50*original_slice_thickness, new_voxel_size, new_matrix_size_elongated, is_label = True)
+
+        print("arm killing...", end="", flush=True)
+        grayImage = extract_trunk.kill_arms(grayImage)
+
+        print("data augmenting...", end="", flush=True)
 
         for index in range(data_augmentation_multiplier):
         
             zbase = np.random.randint(-50, 50) * DEFAULT_ORIGINAL_SLICE_THICKNESS
             if index==0:
                 zbase = 0 # use original
-            ztrue = ztrue - int(zbase / DEFAULT_ORIGINAL_SLICE_THICKNESS)
-            ztrues.append(ztrue)
+            if ztrue >= 0:
+                # shift the answer along z-axis
+                ztrue = ztrue - int(zbase / original_slice_thickness)
+                ztrues.append(ztrue)
         
-            # resize to (1mm,1mm,1.667mm)
-            
-            new_voxel_size = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, INPUT_SLICE_THICKNESS]
-            new_matrix_size = [INPUT_X_SIZE, INPUT_X_SIZE, INPUT_Z_SIZE]
-            
-            gR = volumeresampler.resample(grayImage, zbase, new_voxel_size, new_matrix_size)
-            lR = volumeresampler.resample(grayImage, zbase, new_voxel_size, new_matrix_size)
-            
-            if 0:
-                resample = sitk.ResampleImageFilter()
-                resample.SetOutputDirection(grayImage.GetDirection())
-                resample.SetOutputOrigin(grayImage.GetOrigin())
-                new_spacing = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, INPUT_SLICE_THICKNESS]
-                resample.SetOutputSpacing(new_spacing)
+            # shift the image along z-axis
+            zshift = int(np.floor((zbase + 50*DEFAULT_ORIGINAL_SLICE_THICKNESS) / INPUT_SLICE_THICKNESS))
 
-                gRspac = resample.GetOutputSpacing()
+            gRarr = sitk.GetArrayFromImage(grayImage)[zshift:zshift+INPUT_Z_SIZE,:,:]
+            lRarr = sitk.GetArrayFromImage(labelImage)[zshift:zshift+INPUT_Z_SIZE,:,:]
 
-                gIorig = grayImage.GetOrigin()
-                gIspac = grayImage.GetSpacing()
-                gIsize = grayImage.GetSize()
-                gIdire = grayImage.GetDirection()
-
-                gRsize = [INPUT_X_SIZE, INPUT_X_SIZE, INPUT_Z_SIZE]
-                resample.SetSize(gRsize)
-                gRsize = resample.GetSize()
-                
-                gRorigin_bkup = np.array(gIorig)
-                gRorigin = np.array(gIorig) + (np.array(gIspac)*np.array(gIsize))/2 - (np.array(gRsize)*np.array(gRspac))/2
-                gRorigin[2] = zbase + gRorigin_bkup[2]
-
-                print(f"{gIorig=}, {gIspac=}, {gRsize=}, {gRspac=}, {gRorigin=}, {gIdire=}")
-                
-                resample.SetOutputOrigin(gRorigin)
-                
-                resample.SetUseNearestNeighborExtrapolator(False)
-                
-                resample.SetInterpolator(sitk.sitkLinear)
-                resample.SetDefaultPixelValue(-1000)
-                gR = resample.Execute(grayImage)
-
-                resample.SetInterpolator(sitk.sitkNearestNeighbor)
-                resample.SetDefaultPixelValue(0)
-                lR = resample.Execute(labelImage)
-
-            # kill arms
-            gR = extract_trunk.kill_arms(gR)
-
-            # get array
-            gRarr = sitk.GetArrayFromImage(gR)
-            
             # modify grayscale and label
             gRarr[gRarr<100] = 100
             gRarr[1000<gRarr] = 1000
-            lRarr = sitk.GetArrayFromImage(lR)
             lRarr = (lRarr == labelused).astype(float)
 
             # for violation...
@@ -157,14 +139,18 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier)
 #            for ii in range(NUM_LABEL_IMAGE):
 #                plt.imsave("labl_%d_%d.png"%(i,ii), l[0,ii,:,:])
 
-            training_gray = np.concatenate((training_gray, g), axis=0)
-
+            #training_gray = np.concatenate((training_gray, g), axis=0)
+            training_gray[i,:,:,:] = g
+        
             # 2 label images
 
-            training_label = np.concatenate((training_label, l), axis=0)
+            #training_label = np.concatenate((training_label, l), axis=0)
+            training_label[i,:,:,:] = l
 
             i+=1
     
+        print("done.")
+
     return training_gray, training_label, zs, ztrues, original_slice_thicknesses
 
 
@@ -201,6 +187,7 @@ def main(mode : str,
 
     if(mode == 'train'):
         
+        print("data preparation starting...")
         # data preparation
         (training_gray, training_label, zs, ztrues, original_slice_thicknesses) = \
                                                       data_preparation(volume_list, 
@@ -218,7 +205,9 @@ def main(mode : str,
                                                           tensor_y.type(torch.FloatTensor))
         training_loader = torch.utils.data.DataLoader(training_dataset,
                                                   batch_size=batch_size,
-                                                  shuffle=True)
+                                                  shuffle=True,
+                                                  drop_last=True,
+                                                  num_workers=0)
 
 
 
@@ -233,7 +222,9 @@ def main(mode : str,
 
 
         for epoch in range(n_epoch):
-        
+
+            print("epoch "+str(epoch))
+
             model.train()
             
             sum0 = 0
@@ -250,16 +241,6 @@ def main(mode : str,
                 
                 outputs = torch.sigmoid(outputs)
                 
-#                outputs = torch.nn.LogSoftmax(dim=1)(outputs)
-                
-#                loss = torch.mean(torch.abs(outputs - labels))
-#                loss = torch.nn.NLLLoss()(outputs, (labels[:,0,:,:] < labels[:,1,:,:]).to(torch.long) )
-
-#                labels = (0 < labels).to(torch.float32)
-#                weight = 1000
-#                loss = - labels * torch.log(outputs + 1.0e-10) * weight - (1-labels) * torch.log(1-outputs + 1.0e-10)
-#                loss = torch.mean(loss)
-                
                 loss = dice_loss(outputs, labels)
                 loss = torch.mean(loss)
                 
@@ -267,7 +248,7 @@ def main(mode : str,
                 optimizer.step()
                 
                 sum0 += data.shape[0]
-                sum1 += loss
+                sum1 += loss.detach().cpu().numpy()
             
             print("%f" % (sum1/sum0))
 
@@ -291,6 +272,8 @@ def main(mode : str,
                                             data_preparation(volume_list, 
                                                              labelused,
                                                              data_augmentation_multiplier=1)
+
+        print("test_gray.shape=", test_gray.shape)
         
         tensor_x = torch.from_numpy(test_gray)
         tensor_y = torch.from_numpy(test_label)
@@ -310,6 +293,8 @@ def main(mode : str,
         model.eval()
         with torch.no_grad():
             for batch_idx, (data, labels) in enumerate(test_loader):
+
+                print("batch #%d" % batch_idx)
 
                 data, labels = data.to(device), labels.to(device)
                 
@@ -364,6 +349,7 @@ def main(mode : str,
                     
 
                 base_index += res.size()[0]
+
         # file output
         if 0: # obsolete
             with open(output_file_name, "wt") as f:
@@ -404,7 +390,7 @@ if __name__ == '__main__':
                         type=str, required=True)
     parser.add_argument('--batch_size',
                         help='batch_size',
-                        type=int, default=40)
+                        type=int, default=50)
     parser.add_argument('--learning_rate',
                         help='learning rate',
                         type=float, default=0.001)

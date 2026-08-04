@@ -17,6 +17,7 @@ import scipy.ndimage
 
 import torch
 import torch.nn
+import torch.nn.functional
 import torch.optim as optim
 import unet
 
@@ -34,16 +35,45 @@ INPUT_X_SIZE = 512      # voxels
 INPUT_Z_SIZE = 512      # voxels
 OUTPUT_SLICE_THICKNESS=1
 
+LABEL_NUM=3
 
-def dice_loss(outputs, labels, eps = 1.):
+
+
+def dice_loss(outputs, labels, eps = 1.e-6):
+
     n_batch = outputs.size()[0]
 
-    pred = outputs.view([n_batch, -1])
-    target = labels.view([n_batch, -1])
+    losses = []
+    
+    for i_label in range(1,LABEL_NUM+1):
 
-    intersection = torch.sum(pred*target, axis=1)
-    loss = 1. - (2. * intersection) / (torch.sum(pred, axis=1) + torch.sum(target, axis=1) + eps)
+        pred = outputs[:, i_label, :].view([n_batch, -1])
+        target = torch.where(labels == i_label, 1., 0.).view([n_batch, -1])
 
+        intersection = torch.sum(pred*target, axis=1)
+        loss = 1. - (2. * intersection + eps) / (torch.sum(pred, axis=1) + torch.sum(target, axis=1) + eps)
+
+        losses.append(torch.sum(loss))
+
+    return torch.stack(losses).sum() / LABEL_NUM
+
+
+
+def mse_loss(outputs, labels):
+
+    n_batch = outputs.size()[0]
+
+    losses = []
+
+    assert torch.sum(labels[:] - torch.floor(labels[:])) == 0
+    assert torch.min(labels) == 0
+    assert torch.max(labels) == LABEL_NUM
+
+    onehot = torch.nn.functional.one_hot(labels.to(torch.int64), num_classes=LABEL_NUM+1).to(torch.float32).transpose(1, 4).squeeze()
+
+    loss = torch.mean((outputs - onehot)**2, axis=(2,3))
+    #loss = loss[:,0] * 0.000001 + loss[:,1] * 1.0 + loss[:,2] * 1.0 + loss[:,3] * 1.0 # weight for background vs foreground
+    loss = torch.mean(loss, axis=1) # mean over labels
     return torch.sum(loss)
 
 
@@ -56,20 +86,22 @@ def slice_preparation(grayVolume, labelVolume_orig, labelused, usingz = None, to
     if usingz is None:
         usingz = truez
 
-    lorig = (lorig == labelused).astype('uint8')
+#    lorig = (lorig == labelused).astype('uint8')
+    lorig = lorig.astype('uint8')
     labelImage = sitk.GetImageFromArray(lorig)
     labelImage.SetDirection(labelVolume_orig.GetDirection())
     labelImage.SetOrigin(labelVolume_orig.GetOrigin())
     labelImage.SetSpacing(labelVolume_orig.GetSpacing())
 
-    if 0<tor_slice_diff:
-        bdif = sitk.BinaryDilateImageFilter()
-        bdif.SetKernelRadius((0,0,tor_slice_diff))
-        bdif.SetKernelType(sitk.sitkBox)
-        labelImage = bdif.Execute(labelImage)
-        cif = sitk.CastImageFilter()
-        cif.SetOutputPixelType(sitk.sitkUInt8)
-        labelImage = cif.Execute(labelImage)
+    if 0:
+        if 0<tor_slice_diff:
+            bdif = sitk.BinaryDilateImageFilter()
+            bdif.SetKernelRadius((0,0,tor_slice_diff))
+            bdif.SetKernelType(sitk.sitkBox)
+            labelImage = bdif.Execute(labelImage)
+            cif = sitk.CastImageFilter()
+            cif.SetOutputPixelType(sitk.sitkUInt8)
+            labelImage = cif.Execute(labelImage)
 
     lorig = sitk.GetArrayFromImage(labelImage)
 
@@ -130,7 +162,7 @@ def data_preparation(volume_list : str, labelused, z_list = None, tor_slice_diff
     
         index += 1
     
-    assert len(images_gray) == len(zs)
+    assert zs is None or len(images_gray) == len(zs)
     
     return (images_gray, images_label, zs)
 
@@ -149,7 +181,8 @@ def visual_volume_creation(volume_list : str, estim_labels : np.array, zs : list
 
         # load the answer
 
-        answerlabelVolume = sitk.GetImageFromArray((lorig == labelused).astype('uint8'))
+#        answerlabelVolume = sitk.GetImageFromArray((lorig == labelused).astype('uint8'))
+        answerlabelVolume = sitk.GetImageFromArray(lorig.astype('uint8'))
         answerlabelVolume.SetOrigin(grayVolume.GetOrigin())
         answerlabelVolume.SetSpacing(grayVolume.GetSpacing())
         answerlabelVolume.SetDirection(grayVolume.GetDirection())
@@ -199,24 +232,27 @@ def visual_volume_creation(volume_list : str, estim_labels : np.array, zs : list
         # save final result label
         
         sitk.WriteImage(detectedLabelVolume, '%s/reslabel%d.nii.gz' % (workdir, i))
+        sitk.WriteImage(answerlabelVolume, '%s/answerlabel%d.nii.gz' % (workdir, i))
 
 
 
-        # make illustrated results
-        makeill.write_sag_fusion_res_ill(detectedLabelVolume, answerlabelVolume, grayVolume, 
-                                         '%s/sag%d.png' % (workdir, i), 
-                                         '%s/fusion%d.png' % (workdir, i), 
-                                         '%s/res%d.png' % (workdir, i), 
-                                         '%s/ill%d.png' % (workdir, i)
-                                         )
-        
-        # ...and calculate all metrics and tricolor image
-        (tri_volume, tri_png, metrics) = sarcocalculate.calculate(grayVolume, detectedLabelVolume)
-        
-        sitk.WriteImage(sitk.GetImageFromArray(tri_volume), '%s/tricolor%d.nii.gz' % (workdir, i))
-        imageio.imwrite("%s/tricolor%d.png" % (workdir, i), tri_png)
-        
-        allmetrics.append(metrics)
+        if 0:
+
+            # make illustrated results
+            makeill.write_sag_fusion_res_ill(detectedLabelVolume, answerlabelVolume, grayVolume, 
+                                             '%s/sag%d.png' % (workdir, i), 
+                                             '%s/fusion%d.png' % (workdir, i), 
+                                             '%s/res%d.png' % (workdir, i), 
+                                             '%s/ill%d.png' % (workdir, i)
+                                             )
+            
+            # ...and calculate all metrics and tricolor image
+            (tri_volume, tri_png, metrics) = sarcocalculate.calculate(grayVolume, detectedLabelVolume)
+            
+            sitk.WriteImage(sitk.GetImageFromArray(tri_volume), '%s/tricolor%d.nii.gz' % (workdir, i))
+            imageio.imwrite("%s/tricolor%d.png" % (workdir, i), tri_png)
+            
+            allmetrics.append(metrics)
         
     return pd.DataFrame.from_records(allmetrics)
 
@@ -258,7 +294,7 @@ def main(mode : str,
     
     # model preparation
     # build a model
-    model = unet.Unet(1,1,16)
+    model = unet.Unet(1,LABEL_NUM+1,16)
     if(mode == 'test'):
         model.load_state_dict(torch.load(model_file_name))
     
@@ -302,9 +338,18 @@ def main(mode : str,
                 
                 outputs = model(data)
                 
-                outputs = torch.sigmoid(outputs)
+#                outputs = torch.nn.functional.softmax(outputs, dim=1)
+                outputs = torch.nn.functional.sigmoid(outputs)
                 
-                loss = dice_loss(outputs, labels)
+#                for i in range(data.shape[0]):
+#                    png = outputs[i,1:4,:,:].detach().to("cpu").numpy().astype('float32').transpose(1,2,0)
+#                    imageio.imwrite("g%d.png"%i, (np.clip(png, 0, 1)*255).astype('uint8'))
+#
+#                    png = labels[i,0,:,:].detach().to("cpu").numpy().astype('float32')
+#                    png = np.stack([png]*3, axis=2)
+#                    imageio.imwrite("l%d.png"%i, (np.clip(png, 0, 3)/3*255).astype('uint8'))
+
+                loss = dice_loss(outputs, labels) + mse_loss(outputs, labels) * .1
                 
                 loss.backward()
                 optimizer.step()
@@ -312,12 +357,7 @@ def main(mode : str,
                 sum0 += data.shape[0]
                 sum1 += loss
             
-            print("%f" % (sum1/sum0))
-#            for i in range(10):
-#                plt.imsave(r"output%i.png"%i, outputs.detach().to("cpu").numpy()[i,0,:,:]*255)
-#                plt.imsave(r"graylabel%i.png"%i, data.detach().to("cpu").numpy()[i,0,:,:]+labels.detach().to("cpu").numpy()[i,0,:,:]*1000)
-#            print(np.max(outputs.detach().to("cpu").numpy()[0,0,:,:]))
-#            print(np.mean(outputs.detach().to("cpu").numpy()[0,0,:,:]))
+            print("%i:%f" % (epoch, sum1/sum0))
 
         torch.save(model.module.state_dict(), model_file_name)
 
@@ -338,7 +378,7 @@ def main(mode : str,
 
 
         res = []
-        estim_labels = np.empty([0,512,512], dtype='float32')
+        estim_labels = np.empty([0,512,512], dtype='int')
 
         model.eval()
         with torch.no_grad():
@@ -349,32 +389,26 @@ def main(mode : str,
                 
                 outputs = model(data)
                 
-                outputs = torch.sigmoid(outputs)
-                
-                for i in range(data.shape[0]):
-                    estim_label = (0.5<outputs[i,0,:,:]).detach().to("cpu").numpy()[:,:,np.newaxis].astype(float)
-                    true_label = (0<labels[i,0,:,:]).detach().to("cpu").numpy()[:,:,np.newaxis].astype(float)
-                    plt.imsave("%s/res%d.png"%(workdir, idx_base+i), np.concatenate((estim_label, true_label, estim_label), 2))
-                    
-                    gray = data[i,0,:,:].detach().to("cpu").numpy()[:,:,np.newaxis]
-                    gray = ( np.clip(gray, -99, 99) +100 ) /200 
-                    plt.imsave("%s/gray%d.png"%(workdir, idx_base+i), np.concatenate((gray, gray, gray), 2))
+                outputs = torch.nn.functional.sigmoid(outputs)
 
-                    plt.imsave("%s/fusion%d.png"%(workdir, idx_base+i), np.concatenate((estim_label*.6+gray*.4, gray*.4, estim_label*.5+gray*.5), 2))
-                    
-                    plt.imsave("%s/muscle%d.png"%(workdir, idx_base+i), np.concatenate((estim_label, estim_label, estim_label), 2).astype('float32'))
-                                        
-                    dicecoeff = 2*np.sum(estim_label*true_label) / (1+np.sum(estim_label) + np.sum(true_label))
-                    
-                    res.append( dicecoeff )
-                    
-                    estim_labels = np.concatenate((estim_labels, estim_label[np.newaxis,:,:,0]), 0)
+                for i in range(data.shape[0]):
+                    png = outputs[i,1:4,:,:].detach().to("cpu").numpy().astype('float32').transpose(1,2,0)
+                    imageio.imwrite("g%d.png"%i, (np.clip(png, 0, 1)*255).astype('uint8'))
+
+                    png = labels[i,0,:,:].detach().to("cpu").numpy().astype('float32')
+                    png = np.stack([png]*3, axis=2)
+                    imageio.imwrite("l%d.png"%i, (np.clip(png, 0, 1)*255).astype('uint8'))
+
+                estim_labels_in_batch = torch.argmax(outputs, dim=1, keepdims=False).detach().to("cpu").numpy().astype(int)
+                estim_labels = np.concatenate((estim_labels, estim_labels_in_batch), 0)
                     
                 idx_base += data.shape[0]
-        fp = open(logfilepath, 'at')
-        for i in range(len(res)):
-            fp.write("%d, %f\n" % (i, res[i]))
-        print("avg dice=%f" % np.mean(np.array(res)))
+
+        if 0:
+            fp = open(logfilepath, 'at')
+            for i in range(len(res)):
+                fp.write("%d, %f\n" % (i, res[i]))
+            print("avg dice=%f" % np.mean(np.array(res)))
 
         del model
 
@@ -403,26 +437,29 @@ def main(mode : str,
             
             namebody = namebody + "_" + desc
             
-            # copy ill.png
-            pngfilename = Path(namebody+".ill.png")
-            pngpath = (Path(resultdir) / pngfilename).resolve()
-            shutil.copyfile("%s/ill%d.png"%(workdir, i), pngpath)
-            ill_pathes.append(pngpath)
+            if 0:
             
-            # copy tricolor.png
-            pngfilename = Path(namebody+".tricolor.png")
-            pngpath = (Path(resultdir) / pngfilename).resolve()
-            shutil.copyfile("%s/tricolor%d.png"%(workdir, i), pngpath)
-            tricolor_pathes.append(pngpath)
-            
+                # copy ill.png
+                pngfilename = Path(namebody+".ill.png")
+                pngpath = (Path(resultdir) / pngfilename).resolve()
+                shutil.copyfile("%s/ill%d.png"%(workdir, i), pngpath)
+                ill_pathes.append(pngpath)
+                
+                # copy tricolor.png
+                pngfilename = Path(namebody+".tricolor.png")
+                pngpath = (Path(resultdir) / pngfilename).resolve()
+                shutil.copyfile("%s/tricolor%d.png"%(workdir, i), pngpath)
+                tricolor_pathes.append(pngpath)
+                
             # copy result label
             resultfilename = Path(namebody+".result.nii.gz")
             resultpath = (Path(resultdir) / resultfilename).resolve()
             shutil.copyfile("%s/reslabel%d.nii.gz"%(workdir, i), resultpath)
             result_pathes.append(resultfilename)
 
-        df["{" + desc + "_ill_path}"] = ill_pathes
-        df["{" + desc + "_tricolor_path}"] = tricolor_pathes
+        if 0:
+            df["{" + desc + "_ill_path}"] = ill_pathes
+            df["{" + desc + "_tricolor_path}"] = tricolor_pathes
         df["{" + desc + "_result_path}"] = result_pathes
         
         df["id"] = namebodies
@@ -471,7 +508,7 @@ if __name__ == '__main__':
                         type=str, default='temp/log.txt')
     parser.add_argument('--labelused',
                         help='labelused (1 or 2)',
-                        type=int, default=2)
+                        type=int, default=1)
     parser.add_argument('--n_epoch',
                         help='total epoch num',
                         type=int, default=1000)

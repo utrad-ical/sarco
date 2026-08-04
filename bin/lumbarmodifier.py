@@ -98,7 +98,7 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
         
         
         # if test, only partial volume is used
-        if detectedzs[i] < 0 or grayImage.GetSize()[2]<=detectedzs[i]:
+        if istest and (detectedzs[i] < 0 or grayImage.GetSize()[2]<=detectedzs[i]):
             # out of view
             basez = -100000
             depthz= 0
@@ -304,7 +304,7 @@ def main(mode : str,
                 optimizer.step()
                 
                 sum0 += data.shape[0]
-                sum1 += loss
+                sum1 += loss.detach().cpu().numpy()
             
             print("%f" % (sum1/sum0))
             torch.save(model.module.state_dict(), model_file_name)

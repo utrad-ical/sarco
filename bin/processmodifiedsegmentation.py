@@ -20,7 +20,7 @@ from pathlib import Path
 if __name__ == '__main__':
 
     if len(sys.argv)==1:
-        print("Usage: %s [volume_list_file] [overwrited_label_file_path] [output_path]", sys.argv[0])
+        print("Usage: %s [volume_list_file] [overwritten_label_file_path] [output_path]", sys.argv[0])
     
     df = pd.read_csv(sys.argv[1], encoding='shift_jis')
     
@@ -56,16 +56,16 @@ if __name__ == '__main__':
             else:
                 nameroot = Path(graypath).stem
             
-            overwrited_result_path = label_file_overwriter_path / Path(nameroot + "_"+ desc + ".result.nii.gz")
+            overwritten_result_path = label_file_overwriter_path / Path(nameroot + "_"+ desc + ".result.nii.gz")
             
-            print("testing " + str(overwrited_result_path))
+            print("testing " + str(overwritten_result_path))
             
             try:
-                resultImage = sitk.ReadImage(str(overwrited_result_path))
+                resultImage = sitk.ReadImage(str(overwritten_result_path))
             except:
                 continue
             
-            print("processing " + str(overwrited_result_path))
+            print("processing " + str(overwritten_result_path))
             
             grayImage = sitk.ReadImage(graypath)
             

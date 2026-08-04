@@ -162,3 +162,14 @@ cython_debug/
 
 
 *.BAK
+train_data
+*.png
+Thumbs.db
+model/olds
+output
+temp*
+train10.sh
+train_temp
+*.ckpt
+model/*.ckpt
+

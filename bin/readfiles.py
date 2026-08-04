@@ -64,4 +64,14 @@ def reader(volume_list_file : str):
 
 
 
+def counter(volume_list_file : str):
+    
+    df = pd.read_csv(volume_list_file, encoding='shift_jis')
+    
+    # df = df[["volume_name", "label_volume_name"]]
+    
+    for i, (_, line) in enumerate(df.iterrows()):
+        yield i
+
+
 

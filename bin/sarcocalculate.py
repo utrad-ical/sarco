@@ -224,6 +224,8 @@ def calculate(grayimage : sitk.Image,
         label_muscle = np.zeros_like(labelarray[z,:,:])
         label_visceral = np.zeros_like(labelarray[z,:,:])
         label_superficial = np.zeros_like(labelarray[z,:,:])
+        label_cortical = np.zeros_like(labelarray[z,:,:])
+        label_medullary = np.zeros_like(labelarray[z,:,:])
     else:
         z = np.argmax(zsum)
         print(f"{z=}")
@@ -231,31 +233,13 @@ def calculate(grayimage : sitk.Image,
         # get muscle image
         label_muscle = labelarray[z,:,:] == 1
 
-        if 0: # obsolete
+        # get vertebral images
+        label_cortical = labelarray[z,:,:] == 2
+        label_medullary = labelarray[z,:,:] == 3
 
-            # get gray image
-            gray = grayarray[z,:,:]
-
-            # kill arms
-            gray_arm_removed = BODY_TRUNK_THRESHOLD_HU < extract_trunk.extract(gray)
-
-            # get body trunk label
-            label_trunk = get_largest_connected_component(BODY_TRUNK_THRESHOLD_HU < gray)
-            label_trunk = scipy.ndimage.binary_fill_holes(label_trunk)
-            label_trunk = scipy.ndimage.binary_opening(label_trunk, np.ones((3,3)))
-            label_trunk = scipy.ndimage.binary_erosion(label_trunk, np.ones((3,3)))
-            label_trunk = scipy.ndimage.binary_erosion(label_trunk, np.ones((3,3)), iterations=12)
-            label_trunk = get_largest_connected_component(label_trunk)
-            label_trunk = scipy.ndimage.binary_dilation(label_trunk, np.ones((3,3)), iterations=12)
-            
-            # kill arms
-            gray_arm_removed_dilated = scipy.ndimage.binary_dilation(gray_arm_removed, np.ones((3,3)), iterations = 2)
-            label_trunk = np.logical_and(label_trunk, gray_arm_removed_dilated)
-        
-        else:
-            gray_arm_removed = sitk.GetArrayFromImage(extract_trunk.kill_arms(grayimage))
-            gray = gray_arm_removed[z,:,:]
-            label_trunk = BODY_TRUNK_THRESHOLD_HU < gray
+        gray_arm_removed = sitk.GetArrayFromImage(extract_trunk.kill_arms(grayimage))
+        gray = gray_arm_removed[z,:,:]
+        label_trunk = BODY_TRUNK_THRESHOLD_HU < gray
         
         # get visceral region label
         label_visceral = get_visceral_region(label_muscle, voxel_size)
@@ -265,49 +249,44 @@ def calculate(grayimage : sitk.Image,
         label_superficial = np.copy(label_trunk)
         label_superficial[0<label_visceral] = 0
         label_superficial[0<label_muscle] = 0
-    
+
     # multilabel
-    label_mix = label_visceral + label_superficial*2 + label_muscle*3
+    label_mix = label_visceral + label_superficial*2 + label_muscle*3 + label_cortical*4 + label_medullary*5
     
     # tricolor
     
-    if OUTPUTGRAYSCALEIMAGE:
+    visceral_border = scipy.ndimage.binary_dilation(label_visceral).astype(float) - scipy.ndimage.binary_erosion(label_visceral).astype(float)
+    muscle_border = scipy.ndimage.binary_dilation(label_muscle).astype(float) - scipy.ndimage.binary_erosion(label_muscle).astype(float)
     
-        visceral_border = scipy.ndimage.binary_dilation(label_visceral).astype(float) - scipy.ndimage.binary_erosion(label_visceral).astype(float)
-        muscle_border = scipy.ndimage.binary_dilation(label_muscle).astype(float) - scipy.ndimage.binary_erosion(label_muscle).astype(float)
+    border = visceral_border + muscle_border
+
+    border[::2,1::2] *= -1
+    border[1::2,::2] *= -1
+
+    png = np.clip((gray+200)//5 + border*200, 0, 255).astype('uint8')
+
+    #ver 2
     
-        border = visceral_border + muscle_border
+    SMA_ROI = np.logical_and(np.logical_and(-29<gray, gray<150), label_muscle)
+    VAT_ROI = np.logical_and(np.logical_and(-150<gray, gray<-50), label_visceral)
+    SAT_ROI = np.logical_and(np.logical_and(-190<gray, gray<-30), label_superficial)
+    SASHI_ROI = np.logical_and(gray<-30, label_muscle)
     
-        border[::2,1::2] *= -1
-        border[1::2,::2] *= -1
+    png1 = np.clip(255 * SMA_ROI, 0, 255).astype('uint8')
+    png2 = np.clip(255 * VAT_ROI, 0, 255).astype('uint8')
+    png3 = np.clip(255 * SAT_ROI, 0, 255).astype('uint8')
+    png4 = np.clip((SMA_ROI*3+VAT_ROI*1+SAT_ROI*2)*255//3, 0, 255).astype('uint8')
     
-        png = np.clip((gray+200)//5 + border*200, 0, 255).astype('uint8')
+    png5 = png
+    png6 = np.clip((gray+200)//5, 0, 255).astype('uint8')
     
-        #ver 2
-        
-        SMA_ROI = np.logical_and(np.logical_and(-29<gray, gray<150), label_muscle)
-        VAT_ROI = np.logical_and(np.logical_and(-150<gray, gray<-50), label_visceral)
-        SAT_ROI = np.logical_and(np.logical_and(-190<gray, gray<-30), label_superficial)
-        SASHI_ROI = np.logical_and(gray<-30, label_muscle)
-        
-        png1 = np.clip(255 * SMA_ROI, 0, 255).astype('uint8')
-        png2 = np.clip(255 * VAT_ROI, 0, 255).astype('uint8')
-        png3 = np.clip(255 * SAT_ROI, 0, 255).astype('uint8')
-        png4 = np.clip((SMA_ROI*3+VAT_ROI*1+SAT_ROI*2)*255//3, 0, 255).astype('uint8')
-        
-        png5 = png
-        png6 = np.clip((gray+200)//5, 0, 255).astype('uint8')
-        
-        png = np.concatenate( (np.concatenate((png1,png2), axis=1), np.concatenate((png3,png4), axis=1), np.concatenate((png5,png6), axis=1)), axis=0)
-        
+    png7 = np.clip(np.clip((gray[:,:,np.newaxis]+200)//5, 0, 127) + label_mix[:,:,np.newaxis]*24, 0, 255).astype('uint8')
+
+    png8 = label_mix[:,:,np.newaxis]*51
+
+    png = np.concatenate( (np.concatenate((png1,png2), axis=1), np.concatenate((png3,png4), axis=1), np.concatenate((png5,png6), axis=1), np.concatenate((png7,png8), axis=1)), axis=0)
     
-    else:
     
-        png = np.concatenate((
-            label_mix[:,:,np.newaxis]*42, 
-            np.clip((gray[:,:,np.newaxis]+200)//5, 0, 255), 
-            (label_mix[:,:,np.newaxis]==1)*128
-        ), axis=2).astype('uint8')
     
     
     
