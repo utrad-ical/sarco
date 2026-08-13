@@ -127,7 +127,7 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
         new_matrix_size = [INPUT_X_SIZE, INPUT_X_SIZE, grayImage.GetSize()[2]]
         
         gR = volumeresampler.resample(grayImage, 0, new_voxel_size, new_matrix_size)
-        lR = volumeresampler.resample(grayImage, 0, new_voxel_size, new_matrix_size)
+        lR = volumeresampler.resample(labelImage, 0, new_voxel_size, new_matrix_size)
         
         if 0:
             
@@ -187,7 +187,7 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
 
         l = np.squeeze(np.max(np.max(lRarr,axis=2), axis=1)).astype('int64')
 
-#        print(l)
+        print(l)
 
         g = np.repeat(gRarr[:, np.newaxis, :, :], 3, axis=1)
         

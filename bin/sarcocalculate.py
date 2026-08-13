@@ -146,7 +146,7 @@ def get_largest_connected_component(input : np.array):
 
 
 
-def calculate_variables(label_visceral, label_superficial, label_muscle, gray, voxel_size):
+def calculate_variables(label_visceral, label_superficial, label_muscle, gray, voxel_size, label_cortical_bone=None, label_medullary_bone=None):
 #  ********
 # 【測定項目】
 
@@ -169,6 +169,20 @@ def calculate_variables(label_visceral, label_superficial, label_muscle, gray, v
 # -150 to -50 for visceral adipose tissue　皮下と異なるようなのだが、根拠をきちんと調べていない。
 # ********
 
+    if np.sum(label_muscle) == 0:
+        return {
+            "SMA": 0, 
+            "MSMD": 0, 
+            "VAT": 0, 
+            "SAT": 0,
+            "SASHI": 0,
+            "stdSMD": 0,
+            "meanVAT": 0,
+            "stdVAT": 0,
+            "meanSAT": 0,
+            "stdSAT": 0
+        }
+
     SMA_ROI = np.logical_and(np.logical_and(-29<gray, gray<150), label_muscle)
     SMA = np.sum(SMA_ROI) * voxel_size**2
     MSMD = np.mean(gray[SMA_ROI])
@@ -185,18 +199,59 @@ def calculate_variables(label_visceral, label_superficial, label_muscle, gray, v
     meanSAT = np.mean(gray[SAT_ROI])
     stdSAT = np.std(gray[SAT_ROI])
 
-    return {
-        "SMA": SMA, 
-        "MSMD": MSMD, 
-        "VAT": VAT, 
-        "SAT": SAT,
-        "SASHI": SASHI,
-        "stdSMD": stdSMD,
-        "meanVAT": meanVAT,
-        "stdVAT": stdVAT,
-        "meanSAT": meanSAT,
-        "stdSAT": stdSAT
-    }
+    if(np.sum(label_cortical_bone) == 0):
+        label_cortical_bone = None
+    if(np.sum(label_medullary_bone) == 0):
+        label_medullary_bone = None
+
+    if(label_cortical_bone is not None and label_medullary_bone is not None):
+        cortical_area = np.sum(label_cortical_bone) * voxel_size**2
+        medullary_area = np.sum(label_medullary_bone) * voxel_size**2
+        cortical_density = np.mean(gray[label_cortical_bone]) if label_cortical_bone is not None else 0
+        medullary_density = np.mean(gray[label_medullary_bone]) if label_medullary_bone is not None else 0
+        cortical_std = np.std(gray[label_cortical_bone]) if label_cortical_bone is not None else 0
+        medullary_std = np.std(gray[label_medullary_bone]) if label_medullary_bone is not None else 0
+        cortical_skewness = scipy.stats.skew(gray[label_cortical_bone].flatten()) if label_cortical_bone is not None else 0
+        medullary_skewness = scipy.stats.skew(gray[label_medullary_bone].flatten()) if label_medullary_bone is not None else 0
+        cortical_kurtosis = scipy.stats.kurtosis(gray[label_cortical_bone].flatten()) if label_cortical_bone is not None else 0
+        medullary_kurtosis = scipy.stats.kurtosis(gray[label_medullary_bone].flatten()) if label_medullary_bone is not None else 0
+
+        return {
+            "SMA": SMA,
+            "MSMD": MSMD,
+            "VAT": VAT,
+            "SAT": SAT,
+            "SASHI": SASHI,
+            "stdSMD": stdSMD,
+            "meanVAT": meanVAT,
+            "stdVAT": stdVAT,
+            "meanSAT": meanSAT,
+            "stdSAT": stdSAT,
+            "cortical_area": cortical_area,
+            "medullary_area": medullary_area,
+            "cortical_density": cortical_density,
+            "medullary_density": medullary_density,
+            "cortical_std": cortical_std,
+            "medullary_std": medullary_std,
+            "cortical_skewness": cortical_skewness,
+            "medullary_skewness": medullary_skewness,
+            "cortical_kurtosis": cortical_kurtosis,
+            "medullary_kurtosis": medullary_kurtosis
+        }
+
+    else: 
+        return {
+            "SMA": SMA, 
+            "MSMD": MSMD, 
+            "VAT": VAT, 
+            "SAT": SAT,
+            "SASHI": SASHI,
+            "stdSMD": stdSMD,
+            "meanVAT": meanVAT,
+            "stdVAT": stdVAT,
+            "meanSAT": meanSAT,
+            "stdSAT": stdSAT
+        }
 
 
 
@@ -251,7 +306,7 @@ def calculate(grayimage : sitk.Image,
         label_superficial[0<label_muscle] = 0
 
     # multilabel
-    label_mix = label_visceral + label_superficial*2 + label_muscle*3 + label_cortical*4 + label_medullary*5
+    label_mix = label_visceral + label_superficial*2 + label_muscle*3 + label_cortical*4 + label_medullary*8
     
     # tricolor
     
@@ -280,9 +335,10 @@ def calculate(grayimage : sitk.Image,
     png5 = png
     png6 = np.clip((gray+200)//5, 0, 255).astype('uint8')
     
-    png7 = np.clip(np.clip((gray[:,:,np.newaxis]+200)//5, 0, 127) + label_mix[:,:,np.newaxis]*24, 0, 255).astype('uint8')
+    png7 = np.clip(np.clip((gray[:,:]+200)//5, 0, 127) + label_mix[:,:]*24, 0, 255).astype('uint8')
 
-    png8 = label_mix[:,:,np.newaxis]*51
+    png8 = label_mix[:,:]*21 - (label_mix[:,:]==4)*36
+
 
     png = np.concatenate( (np.concatenate((png1,png2), axis=1), np.concatenate((png3,png4), axis=1), np.concatenate((png5,png6), axis=1), np.concatenate((png7,png8), axis=1)), axis=0)
     
@@ -296,7 +352,14 @@ def calculate(grayimage : sitk.Image,
     
     return (volume, 
             png, 
-            calculate_variables(label_visceral, label_superficial, label_muscle, gray, voxel_size)
+            calculate_variables(
+                label_visceral, 
+                label_superficial, 
+                label_muscle, 
+                gray, 
+                voxel_size,
+                label_cortical_bone=label_cortical,
+                label_medullary_bone=label_medullary)
             )
 
 

@@ -172,4 +172,4 @@ train10.sh
 train_temp
 *.ckpt
 model/*.ckpt
-
+input

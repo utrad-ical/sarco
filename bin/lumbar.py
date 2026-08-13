@@ -106,7 +106,7 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier)
             if ztrue >= 0:
                 # shift the answer along z-axis
                 ztrue = ztrue - int(zbase / original_slice_thickness)
-                ztrues.append(ztrue)
+            ztrues.append(ztrue)
         
             # shift the image along z-axis
             zshift = int(np.floor((zbase + 50*DEFAULT_ORIGINAL_SLICE_THICKNESS) / INPUT_SLICE_THICKNESS))

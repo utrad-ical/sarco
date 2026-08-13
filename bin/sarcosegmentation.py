@@ -78,6 +78,25 @@ def mse_loss(outputs, labels):
 
 
 
+def cross_entropy_loss(outputs, labels):
+
+    n_batch = outputs.size()[0]
+
+    losses = []
+
+    assert torch.sum(labels[:] - torch.floor(labels[:])) == 0
+    assert torch.min(labels) == 0
+    assert torch.max(labels) == LABEL_NUM
+
+    onehot = torch.nn.functional.one_hot(labels.to(torch.int64), num_classes=LABEL_NUM+1).to(torch.float32).transpose(1, 4).squeeze()
+
+    loss = torch.mean(torch.nn.BCEWithLogitsLoss(reduction='none')(outputs, onehot), axis=(2,3))
+    #loss = loss[:,0] * 0.000001 + loss[:,1] * 1.0 + loss[:,2] * 1.0 + loss[:,3] * 1.0 # weight for background vs foreground
+    loss = torch.mean(loss, axis=1) # mean over labels
+    return torch.sum(loss)
+
+
+
 def slice_preparation(grayVolume, labelVolume_orig, labelused, usingz = None, tor_slice_diff = 0, trunkextract = False):
 
     lorig = sitk.GetArrayFromImage(labelVolume_orig)
@@ -236,7 +255,7 @@ def visual_volume_creation(volume_list : str, estim_labels : np.array, zs : list
 
 
 
-        if 0:
+        if 1:
 
             # make illustrated results
             makeill.write_sag_fusion_res_ill(detectedLabelVolume, answerlabelVolume, grayVolume, 
@@ -250,7 +269,7 @@ def visual_volume_creation(volume_list : str, estim_labels : np.array, zs : list
             (tri_volume, tri_png, metrics) = sarcocalculate.calculate(grayVolume, detectedLabelVolume)
             
             sitk.WriteImage(sitk.GetImageFromArray(tri_volume), '%s/tricolor%d.nii.gz' % (workdir, i))
-            imageio.imwrite("%s/tricolor%d.png" % (workdir, i), tri_png)
+            imageio.imwrite("%s/tricolor%d.png" % (workdir, i), np.stack([tri_png]*3, axis=2).astype('uint8'))
             
             allmetrics.append(metrics)
         
@@ -338,8 +357,8 @@ def main(mode : str,
                 
                 outputs = model(data)
                 
-#                outputs = torch.nn.functional.softmax(outputs, dim=1)
-                outputs = torch.nn.functional.sigmoid(outputs)
+                outputs_softmax = torch.nn.functional.softmax(outputs, dim=1)
+#                outputs = torch.nn.functional.sigmoid(outputs)
                 
 #                for i in range(data.shape[0]):
 #                    png = outputs[i,1:4,:,:].detach().to("cpu").numpy().astype('float32').transpose(1,2,0)
@@ -349,7 +368,7 @@ def main(mode : str,
 #                    png = np.stack([png]*3, axis=2)
 #                    imageio.imwrite("l%d.png"%i, (np.clip(png, 0, 3)/3*255).astype('uint8'))
 
-                loss = dice_loss(outputs, labels) + mse_loss(outputs, labels) * .1
+                loss = dice_loss(outputs_softmax, labels) + cross_entropy_loss(outputs, labels)
                 
                 loss.backward()
                 optimizer.step()
@@ -437,7 +456,7 @@ def main(mode : str,
             
             namebody = namebody + "_" + desc
             
-            if 0:
+            if 1:
             
                 # copy ill.png
                 pngfilename = Path(namebody+".ill.png")
@@ -457,7 +476,7 @@ def main(mode : str,
             shutil.copyfile("%s/reslabel%d.nii.gz"%(workdir, i), resultpath)
             result_pathes.append(resultfilename)
 
-        if 0:
+        if 1:
             df["{" + desc + "_ill_path}"] = ill_pathes
             df["{" + desc + "_tricolor_path}"] = tricolor_pathes
         df["{" + desc + "_result_path}"] = result_pathes
