@@ -294,7 +294,10 @@ def visual_volume_creation(volume_list : str, estim_labels : np.array, zs : list
                                     lambda: {"mask": extract_trunk.trunk_mask(grayVolume)})["mask"]
             (tri_volume, tri_png, metrics) = sarcocalculate.calculate(grayVolume, detectedLabelVolume, mask)
             
-            sitk.WriteImage(sitk.GetImageFromArray(tri_volume), '%s/tricolor%d.nii.gz' % (workdir, i))
+            tri_image = sitk.GetImageFromArray(tri_volume)
+            tri_image.CopyInformation(detectedLabelVolume)
+            sitk.WriteImage(tri_image, '%s/tricolor%d.nii.gz' % (workdir, i))
+            sitk.WriteImage(sarcocalculate.visceral_mask(detectedLabelVolume), '%s/visceral%d.nii.gz' % (workdir, i))
             imageio.imwrite("%s/tricolor%d.png" % (workdir, i), np.stack([tri_png]*3, axis=2).astype('uint8'))
             
             allmetrics.append(metrics)
@@ -461,6 +464,7 @@ def main(mode : str,
         ill_pathes = []
         tricolor_pathes = []
         result_pathes = []
+        visceral_pathes = []
         namebodies = []
         for i, (_, line) in enumerate(df.iterrows()):
             namebody = str(Path(line["{volume_name}"]).name)
@@ -496,10 +500,16 @@ def main(mode : str,
             shutil.copyfile("%s/reslabel%d.nii.gz"%(workdir, i), resultpath)
             result_pathes.append(resultfilename)
 
+            # copy visceral mask (input of the contrast-phase model)
+            visceralfilename = Path(namebody+".visceral.nii.gz")
+            shutil.copyfile("%s/visceral%d.nii.gz"%(workdir, i), (Path(resultdir) / visceralfilename).resolve())
+            visceral_pathes.append(visceralfilename)
+
         if 1:
             df["{" + desc + "_ill_path}"] = ill_pathes
             df["{" + desc + "_tricolor_path}"] = tricolor_pathes
         df["{" + desc + "_result_path}"] = result_pathes
+        df["{" + desc + "_visceral_path}"] = visceral_pathes
         
         df["id"] = namebodies
         

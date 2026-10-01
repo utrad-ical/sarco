@@ -138,6 +138,29 @@ def get_visceral_region(label_muscle : np.array, voxelsize : float, debug = Fals
 
 
 
+def visceral_mask(labelimage : sitk.Image) -> sitk.Image:
+    '''
+    The region enclosed by muscle (label 1), without muscle and the vertebral
+    body (labels 2 and 3), on the slice with the most muscle. Returned as a
+    uint8 volume (1 = visceral) on the label's own grid; all zero when the
+    label has no muscle.
+    '''
+    labelarray = sitk.GetArrayFromImage(labelimage)
+    out = np.zeros(labelarray.shape, dtype='uint8')
+    zsum = np.sum(labelarray == 1, axis=(1,2))
+    if np.sum(zsum) > 0:
+        z = np.argmax(zsum)
+        label = labelarray[z,:,:]
+        region = get_visceral_region(label == 1, labelimage.GetSpacing()[0])
+        region[np.isin(label, (1, 2, 3))] = 0
+        out[z,:,:] = region
+    image = sitk.GetImageFromArray(out)
+    image.CopyInformation(labelimage)
+    return image
+
+
+
+
 def get_largest_connected_component(input : np.array):
     labeled, labelnum = scipy.ndimage.label(input)
     volumes = [np.sum(labeled==i+1) for i in np.arange(labelnum)]

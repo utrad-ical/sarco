@@ -39,6 +39,14 @@ CIRCUSのインターフェースからプラグインを起動すると、`proc
 
 学習時（`--mode train`）は、`--labelused` のラベルが1画素もない症例を自動で除外し、除外した症例のラベルファイルを表示します（`readfiles.drop_empty_labels`）。空のラベルのまま学習すると、lumbarmodifier と sarcosegmentation は0番スライスを正解として空のラベルで学習してしまうためです。推論時は除外しません。
 
+## 内臓領域マスク
+
+`sarcosegmentation.py` は、結果ラベル `<名前>_<L1|L3>.result.nii.gz` と並べて内臓領域マスク `<名前>_<L1|L3>.visceral.nii.gz` を出力し、`__result_<L1|L3>.csv` の `{<L1|L3>_visceral_path}` 列にそのファイル名を記録します（`sarcocalculate.visceral_mask`）。
+
+*   マスクは、筋肉（ラベル1）に囲まれた領域（`get_visceral_region`）から、筋肉と椎体（ラベル2、3）を除いたものです。筋肉が最も多いスライス1枚だけに値1が入ります。椎弓・脊柱管は椎体ラベルに含まれないので、マスクに残ります。
+*   画像の幾何情報（原点・画素間隔・向き）は元の体積と同じです。`tricolor<i>.nii.gz` にも幾何情報を付けるようにしました。
+*   既存の結果から作り直すには `bin/tools/make_visceral_masks.py` を使います。GPUも再セグメンテーションも不要です。列 `gray`, `label`, `name` を持つCSVを渡すと、マスク、確認用PNG（CT・筋肉の輪郭が赤・椎体が青・内臓領域が緑）、各症例の確認用の数値を書いた `manifest.csv` を出力します。`muscle_coverage`（筋肉の中心から見て筋肉がある方向の割合）が低い症例は、筋肉の輪が途切れているので確認してください。
+
 ## 前処理のキャッシュ
 
 体積の読み込み、リサンプル、腕の除去は時間がかかり、しかも同じ処理が何度も繰り返されます（L1とL3で同じ体積を処理する、学習のたびに同じ症例を前処理する、など）。そこで `lumbar.py`、`lumbarmodifier.py`、`sarcosegmentation.py` は、`--cache_dir` を指定すると症例ごとの前処理結果を保存し、次回以降はそれを使います（`bin/prepcache.py`）。
