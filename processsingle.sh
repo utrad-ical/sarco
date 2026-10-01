@@ -49,7 +49,11 @@ python bin/sarcosegmentation.py --mode test --volume_list_file=$WORKDIR_L1/l1mod
 
 python bin/sarcosegmentation.py --mode test --volume_list_file=$WORKDIR_L3/l3mod.txt --z_list_file=$WORKDIR_L3/l3mod.txt --device cuda --workdir=$WORKDIR_L3 --model_file_name=model/l3_segmentation.ckpt --logfilepath=$WORKDIR_L3/log.txt --resultdir=$RESULTDIR --desc=L3 --cache_dir $CACHEDIR
 
-python bin/resultuniter_circus.py $RESULTDIR/__result_L1.csv $RESULTDIR/__result_L3.csv $RESULTDIR/results.json
+# age, contrast phase, body size and phase-0 equivalent values (ct25d checkpoints in model/;
+# a missing checkpoint only skips that estimate)
+python bin/estimate.py --gray $INDIR/0.mhd --resultdir $RESULTDIR --model_dir model --device cuda --cache_dir $CACHEDIR
+
+python bin/resultuniter_circus.py $RESULTDIR/__result_L1.csv $RESULTDIR/__result_L3.csv $RESULTDIR/results.json $RESULTDIR/__estimates.csv
 
 
 

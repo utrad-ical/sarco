@@ -1,7 +1,7 @@
 {
   "type": "CAD",
   "pluginName": "Sarcopenia",
-  "version": "8.0.0",
+  "version": "8.1.0",
   "description": "Evaluates sarcopenia from torso CT",
   "icon": {
     "glyph": "calc",
@@ -16,6 +16,25 @@
           {
             "fileName": "0_L1.ill.png",
             "labelData": [
+              {
+                "customLabel": "Estimates"
+              },
+              {
+                "customLabel": "Age: ",
+                "dataPath": "results.estimates.0.age"
+              },
+              {
+                "customLabel": "Height: ",
+                "dataPath": "results.estimates.0.height"
+              },
+              {
+                "customLabel": "Weight: ",
+                "dataPath": "results.estimates.0.weight"
+              },
+              {
+                "customLabel": "Phase: ",
+                "dataPath": "results.estimates.0.phase_name"
+              },
               {
                 "customLabel": "L1"
               },
@@ -34,6 +53,42 @@
               {
                 "customLabel": "SAT: ",
                 "dataPath": "results.L1.0.L1_SAT"
+              },
+              {
+                "customLabel": "MSMD (plain eq.): ",
+                "dataPath": "results.estimates.0.L1_MSMD_phase0"
+              },
+              {
+                "customLabel": "meanVAT: ",
+                "dataPath": "results.L1.0.L1_meanVAT"
+              },
+              {
+                "customLabel": "meanVAT (plain eq.): ",
+                "dataPath": "results.estimates.0.L1_meanVAT_phase0"
+              },
+              {
+                "customLabel": "meanSAT: ",
+                "dataPath": "results.L1.0.L1_meanSAT"
+              },
+              {
+                "customLabel": "meanSAT (plain eq.): ",
+                "dataPath": "results.estimates.0.L1_meanSAT_phase0"
+              },
+              {
+                "customLabel": "cortical density: ",
+                "dataPath": "results.L1.0.L1_cortical_density"
+              },
+              {
+                "customLabel": "cortical density (plain eq.): ",
+                "dataPath": "results.estimates.0.L1_cortical_density_phase0"
+              },
+              {
+                "customLabel": "medullary density: ",
+                "dataPath": "results.L1.0.L1_medullary_density"
+              },
+              {
+                "customLabel": "medullary density (plain eq.): ",
+                "dataPath": "results.estimates.0.L1_medullary_density_phase0"
               }
             ],
             "maxHeight": 550,
@@ -71,6 +126,42 @@
               {
                 "customLabel": "SAT: ",
                 "dataPath": "results.L3.0.L3_SAT"
+              },
+              {
+                "customLabel": "MSMD (plain eq.): ",
+                "dataPath": "results.estimates.0.L3_MSMD_phase0"
+              },
+              {
+                "customLabel": "meanVAT: ",
+                "dataPath": "results.L3.0.L3_meanVAT"
+              },
+              {
+                "customLabel": "meanVAT (plain eq.): ",
+                "dataPath": "results.estimates.0.L3_meanVAT_phase0"
+              },
+              {
+                "customLabel": "meanSAT: ",
+                "dataPath": "results.L3.0.L3_meanSAT"
+              },
+              {
+                "customLabel": "meanSAT (plain eq.): ",
+                "dataPath": "results.estimates.0.L3_meanSAT_phase0"
+              },
+              {
+                "customLabel": "cortical density: ",
+                "dataPath": "results.L3.0.L3_cortical_density"
+              },
+              {
+                "customLabel": "cortical density (plain eq.): ",
+                "dataPath": "results.estimates.0.L3_cortical_density_phase0"
+              },
+              {
+                "customLabel": "medullary density: ",
+                "dataPath": "results.L3.0.L3_medullary_density"
+              },
+              {
+                "customLabel": "medullary density (plain eq.): ",
+                "dataPath": "results.estimates.0.L3_medullary_density_phase0"
               }
             ],
             "labelPosition": "top"

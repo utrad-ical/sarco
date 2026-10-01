@@ -47,6 +47,25 @@ CIRCUSのインターフェースからプラグインを起動すると、`proc
 *   画像の幾何情報（原点・画素間隔・向き）は元の体積と同じです。`tricolor<i>.nii.gz` にも幾何情報を付けるようにしました。
 *   既存の結果から作り直すには `bin/tools/make_visceral_masks.py` を使います。GPUも再セグメンテーションも不要です。列 `gray`, `label`, `name` を持つCSVを渡すと、マスク、確認用PNG（CT・筋肉の輪郭が赤・椎体が青・内臓領域が緑）、各症例の確認用の数値を書いた `manifest.csv` を出力します。`muscle_coverage`（筋肉の中心から見て筋肉がある方向の割合）が低い症例は、筋肉の輪が途切れているので確認してください。
 
+## 年齢・造影相・身長体重の推定と、時相0（単純CT）相当値
+
+`processsingle.sh` は、L1/L3 の解析のあとに `bin/estimate.py` を実行します。結果は `__estimates.csv` に書かれ、`results.json` の `results.estimates` に入ります。推定には [ct25d-regressor](https://github.com/hanaokalog/ct25d-regressor) を使います（Dockerfile でコミットを固定してインストール）。`model/` にないチェックポイントの推定は飛ばし、残りはそのまま実行します。
+
+*   **年齢** (`age`): L1/L3 の椎体髄質（ラベル3）と筋肉（ラベル1）の4モデル（`model/age_{marrow,muscle}_L{1,3}.pt`）を、逆分散で重み付けして統合します。統合後の幅は `model/age_combination.json` の係数で補正しています（4モデルは独立ではないため）。各モデルの値と95%区間も出力します。
+*   **造影相** (`phase`, `phase_name`): 内臓領域マスクから L1/L3 で推定し（`model/phase_L{1,3}.pt`）、両者の確率を平均して最も確率の高い相を1つ選びます。0 単純、1 早期動脈相、2 後期動脈相、3 門脈相、4 平衡相。
+*   **身長・体重** (`height`, `weight`): 体幹（腕と寝台を除いたもの）の投影像と L1/L3 断面から推定します（`model/bodysize.pt`, `ct25d.bodysize`）。
+*   **時相0相当値** (`<L1|L3>_<項目>_phase0`): MSMD, meanVAT, meanSAT, cortical_density, medullary_density を、推定した造影相の線形式 `値0 = a + b × 値k` で単純CT相当に換算します（`model/phase_correction.json`、レベル・項目・相ごと。相0はそのまま）。式は akamatsu コホートの同一検査の相0と相kの組から最小二乗で求めました。
+
+学習と評価（2026-10-01, 保留したテスト分割）:
+
+| 推定 | テスト成績 |
+|---|---|
+| 年齢 骨髄 L1 / L3 | MAE 7.7 / 7.2 歳 |
+| 年齢 筋肉 L1 / L3 | MAE 8.2 / 7.7 歳 |
+| 年齢 統合 | MAE 7.3 歳 (akamatsu), 6.2 歳 (train_data) |
+| 造影相 L1 / L3 / 平均 | 正解率 0.88 / 0.82 / 0.90 |
+| 身長 / 体重 | MAE 3.5 cm / 2.8 kg |
+
 ## 前処理のキャッシュ
 
 体積の読み込み、リサンプル、腕の除去は時間がかかり、しかも同じ処理が何度も繰り返されます（L1とL3で同じ体積を処理する、学習のたびに同じ症例を前処理する、など）。そこで `lumbar.py`、`lumbarmodifier.py`、`sarcosegmentation.py` は、`--cache_dir` を指定すると症例ごとの前処理結果を保存し、次回以降はそれを使います（`bin/prepcache.py`）。
