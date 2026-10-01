@@ -89,9 +89,14 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier)
         new_voxel_size = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, INPUT_SLICE_THICKNESS]
         new_matrix_size_elongated = [INPUT_X_SIZE, INPUT_X_SIZE, INPUT_Z_SIZE*2]
 
-        # get an enlarged volume to allow for data augmentation
-        grayImage = volumeresampler.resample(grayImage, -50*original_slice_thickness, new_voxel_size, new_matrix_size_elongated, is_label = False, apply_filter = True)
-        labelImage = volumeresampler.resample(labelImage, -50*original_slice_thickness, new_voxel_size, new_matrix_size_elongated, is_label = True)
+        # get an enlarged volume to allow for data augmentation.
+        # the margin is a fixed physical length (250 mm), the same one zshift
+        # removes below, so that crop row 0 is always the first original slice
+        # whatever the slice thickness. (it used to be 50 original slices, which
+        # equals 250 mm only for 5 mm slices and shifted thinner volumes.)
+        z_margin_mm = 50*DEFAULT_ORIGINAL_SLICE_THICKNESS
+        grayImage = volumeresampler.resample(grayImage, -z_margin_mm, new_voxel_size, new_matrix_size_elongated, is_label = False, apply_filter = True)
+        labelImage = volumeresampler.resample(labelImage, -z_margin_mm, new_voxel_size, new_matrix_size_elongated, is_label = True)
 
         print("arm killing...", end="", flush=True)
         grayImage = extract_trunk.kill_arms(grayImage)
@@ -103,13 +108,19 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier)
             zbase = np.random.randint(-50, 50) * DEFAULT_ORIGINAL_SLICE_THICKNESS
             if index==0:
                 zbase = 0 # use original
+            # shift the answer along z-axis. computed from the original ztrue
+            # each time: overwriting ztrue made every augmented copy carry the
+            # sum of all earlier shifts.
             if ztrue >= 0:
-                # shift the answer along z-axis
-                ztrue = ztrue - int(zbase / original_slice_thickness)
-            ztrues.append(ztrue)
+                ztrue_shifted = ztrue - int(np.round(zbase / original_slice_thickness))
+            else:
+                ztrue_shifted = -1
+            ztrues.append(ztrue_shifted)
         
             # shift the image along z-axis
-            zshift = int(np.floor((zbase + 50*DEFAULT_ORIGINAL_SLICE_THICKNESS) / INPUT_SLICE_THICKNESS))
+            # round, not floor: 250 / 1.666666666667 is 149.99999999994 in
+            # floating point, and floor dropped one row (1.67 mm) every time
+            zshift = int(np.round((zbase + z_margin_mm) / INPUT_SLICE_THICKNESS))
 
             gRarr = sitk.GetArrayFromImage(grayImage)[zshift:zshift+INPUT_Z_SIZE,:,:]
             lRarr = sitk.GetArrayFromImage(labelImage)[zshift:zshift+INPUT_Z_SIZE,:,:]
