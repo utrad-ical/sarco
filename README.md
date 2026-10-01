@@ -35,6 +35,10 @@ CIRCUSのインターフェースからプラグインを起動すると、`proc
 *   `Dockerfile`: プラグインのDockerイメージをビルドするために使用します。
 *   `plugin.json`: CIRCUSプラグインの設定と表示方法を定義します。
 
+## 学習データの扱い
+
+学習時（`--mode train`）は、`--labelused` のラベルが1画素もない症例を自動で除外し、除外した症例のラベルファイルを表示します（`readfiles.drop_empty_labels`）。空のラベルのまま学習すると、lumbarmodifier と sarcosegmentation は0番スライスを正解として空のラベルで学習してしまうためです。推論時は除外しません。
+
 ## 前処理のキャッシュ
 
 体積の読み込み、リサンプル、腕の除去は時間がかかり、しかも同じ処理が何度も繰り返されます（L1とL3で同じ体積を処理する、学習のたびに同じ症例を前処理する、など）。そこで `lumbar.py`、`lumbarmodifier.py`、`sarcosegmentation.py` は、`--cache_dir` を指定すると症例ごとの前処理結果を保存し、次回以降はそれを使います（`bin/prepcache.py`）。

@@ -36,6 +36,7 @@ CACHE_VERSIONS = {
     "modifier_gray": 1,     # lumbarmodifier.py: search window
     "seg_slice": 1,         # sarcosegmentation.py: the slice to segment
     "trunk_mask": 1,        # extract_trunk.py: body trunk mask (arm removal)
+    "label_nonempty": 1,    # readfiles.py: whether a label file has the label
 }
 
 

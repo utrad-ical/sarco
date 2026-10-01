@@ -127,7 +127,7 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
             searchalls = [False, ] * len(detectedzs)
     
     i = 0
-    for (_, line) in pd.read_csv(volume_list, encoding='shift_jis').iterrows():
+    for (_, line) in readfiles.read_list(volume_list).iterrows():
 
         gray_path, label_path = readfiles.paths(line)
 
@@ -260,6 +260,8 @@ def main(mode : str,
 
     if(mode == 'train'):
         
+        volume_list = readfiles.drop_empty_labels(volume_list, labelused, cache_dir)
+
         # data preparation
         (training_gray, training_label, zs, ztrues, _, _) = data_preparation(volume_list, 
                                                                        labelused, False,

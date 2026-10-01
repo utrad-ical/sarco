@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import SimpleITK as sitk
 
+import prepcache
+
 
 
 def readone(line):
@@ -59,6 +61,49 @@ def paths(line):
     if "{label_volume_name}" in line:
         return gray_path, line["{label_volume_name}"].strip()
     return gray_path, None
+
+
+
+def read_list(volume_list):
+    '''a volume list as a DataFrame, from its file path or as it is'''
+    if isinstance(volume_list, pd.DataFrame):
+        return volume_list
+    return pd.read_csv(volume_list, encoding='shift_jis')
+
+
+
+def drop_empty_labels(volume_list, labelused : int, cache_dir = None) -> pd.DataFrame:
+    '''
+    the rows of a training list whose label file has at least one voxel of
+    labelused. a case without the label teaches every step something wrong:
+    lumbar trains on "nothing here", and lumbarmodifier and sarcosegmentation
+    take slice 0 as the true slice and train on an empty label. excluded
+    cases are listed so that the cohort does not shrink silently.
+    '''
+    df = read_list(volume_list)
+    if "{label_volume_name}" not in df.columns:
+        print("[warn] the list has no {label_volume_name} column; nothing excluded")
+        return df
+
+    keep = []
+    for (_, line) in df.iterrows():
+        _, label_path = paths(line)
+        result = prepcache.cached(cache_dir, "label_nonempty",
+                                  {"label": prepcache.file_signature(label_path),
+                                   "labelused": labelused},
+                                  lambda: {"nonempty": np.any(sitk.GetArrayFromImage(sitk.ReadImage(label_path)) == labelused)})
+        keep.append(bool(result["nonempty"]))
+
+    keep = np.array(keep)
+    excluded = df[~keep]
+    if len(excluded):
+        print(f"[info] excluded {len(excluded)}/{len(df)} cases without label {labelused}:")
+        for (_, line) in excluded.iterrows():
+            print("    " + str(paths(line)[1]))
+    if not keep.any():
+        raise ValueError(f"no case in the list has label {labelused}")
+
+    return df[keep].reset_index(drop=True)
 
 
 

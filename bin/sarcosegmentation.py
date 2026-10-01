@@ -174,7 +174,7 @@ def data_preparation(volume_list : str, labelused, z_list = None, tor_slice_diff
     
     
     index = 0
-    for (_, line) in pd.read_csv(volume_list, encoding='shift_jis').iterrows():
+    for (_, line) in readfiles.read_list(volume_list).iterrows():
 
         gray_path, label_path = readfiles.paths(line)
         usingz = None if zs is None else zs[index]
@@ -330,6 +330,7 @@ def main(mode : str,
         # do not use detected z_list
         z_list_file = None
         tor_slice_diff = 0
+        volume_list_file = readfiles.drop_empty_labels(volume_list_file, labelused, cache_dir)
 
 
 

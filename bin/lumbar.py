@@ -172,7 +172,7 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier,
     original_slice_thicknesses = []
 
     # malloc
-    df = pd.read_csv(volume_list, encoding='shift_jis')
+    df = readfiles.read_list(volume_list)
     N = len(df)
     training_gray = np.zeros([N*data_augmentation_multiplier,NUM_FEATURE_IMAGE,INPUT_Z_SIZE,INPUT_X_SIZE], dtype='float32')
     training_label = np.zeros([N*data_augmentation_multiplier,2,INPUT_Z_SIZE,INPUT_X_SIZE], dtype='float32')
@@ -251,6 +251,8 @@ def main(mode : str,
 
     if(mode == 'train'):
         
+        volume_list = readfiles.drop_empty_labels(volume_list, labelused, cache_dir)
+
         print("data preparation starting...")
         # data preparation
         (training_gray, training_label, zs, ztrues, original_slice_thicknesses) = \
