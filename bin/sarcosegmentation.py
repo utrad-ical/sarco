@@ -410,14 +410,6 @@ def main(mode : str,
                 
                 outputs = torch.nn.functional.sigmoid(outputs)
 
-                for i in range(data.shape[0]):
-                    png = outputs[i,1:4,:,:].detach().to("cpu").numpy().astype('float32').transpose(1,2,0)
-                    imageio.imwrite("g%d.png"%i, (np.clip(png, 0, 1)*255).astype('uint8'))
-
-                    png = labels[i,0,:,:].detach().to("cpu").numpy().astype('float32')
-                    png = np.stack([png]*3, axis=2)
-                    imageio.imwrite("l%d.png"%i, (np.clip(png, 0, 1)*255).astype('uint8'))
-
                 estim_labels_in_batch = torch.argmax(outputs, dim=1, keepdims=False).detach().to("cpu").numpy().astype(int)
                 estim_labels = np.concatenate((estim_labels, estim_labels_in_batch), 0)
                     
