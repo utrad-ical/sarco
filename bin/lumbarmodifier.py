@@ -117,8 +117,19 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
         
             basez = int(np.floor(basez/zspacing)) * zspacing
         
-        basezs.append(basez / zspacing)
         depthz = int(depthz+0.0001)
+
+        # slice range of the search window, clamped inside the volume. near the
+        # top basez is negative, and a negative start index counts from the
+        # END of the array in python, so the window came out empty: the case
+        # was silently dropped in training and reported as not detected in test.
+        startindexz = int(np.round(basez/zspacing))
+        endindexz = startindexz + depthz
+        startindexz = int(np.clip(startindexz, 0, grayImage.GetSize()[2]))
+        endindexz = int(np.clip(endindexz, startindexz, grayImage.GetSize()[2]))
+
+        # the slice index the window starts at, to map the argmax back
+        basezs.append(startindexz)
         
         
 #        print(f"z search {basez=}, {depthz=}")
@@ -172,8 +183,6 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
         lRarr = sitk.GetArrayFromImage(lR)
         lRarr = (lRarr == labelused).astype(float)
 
-        startindexz = int(basez/zspacing)
-        endindexz = startindexz + depthz
         gRarr = gRarr[startindexz : endindexz, :, :]
         lRarr = lRarr[startindexz : endindexz, :, :]
 
