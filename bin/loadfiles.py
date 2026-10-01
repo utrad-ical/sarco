@@ -60,15 +60,19 @@ if __name__ == '__main__':
             ext = '.nii.gz'
         if case_name in list(case_name_dict.keys()):
             # duplicated name
-            index = len(case_name_dict[case_name])
-            new_case_name = case_name + "_" + str(index)
+            # (dup_count, not index: overwriting the loop variable wrote the
+            # path into another row)
+            dup_count = len(case_name_dict[case_name])
+            new_case_name = case_name + "_" + str(dup_count)
             case_name_dict[case_name].append(new_case_name)
             case_name = new_case_name
         else:
             case_name_dict[case_name] = [case_name, ]
 
         # dest
-        dest = (dest_dir_path / case_name).with_suffix(ext)
+        # append, not with_suffix: with_suffix replaces the part after the
+        # last dot, so '1.2.840' would become '1.2.nii.gz' and collide
+        dest = dest_dir_path / (case_name + ext)
 
         
         # copy
@@ -78,5 +82,5 @@ if __name__ == '__main__':
 
         outlist.loc[index, "{volume_name}"] = str(dest.resolve())
 
-outlist.to_csv(out_list_file_path, encoding='shift_jis', index=False)
+    outlist.to_csv(out_list_file_path, encoding='shift_jis', index=False)
 
