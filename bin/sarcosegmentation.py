@@ -22,6 +22,7 @@ import torch.optim as optim
 import unet
 
 import readfiles
+import prepcache
 import volumeresampler
 import sarcocalculate
 import extract_trunk
@@ -152,7 +153,7 @@ def slice_preparation(grayVolume, labelVolume_orig, labelused, usingz = None, to
 
 
 
-def data_preparation(volume_list : str, labelused, z_list = None, tor_slice_diff = 0, trunkextract = False):
+def data_preparation(volume_list : str, labelused, z_list = None, tor_slice_diff = 0, trunkextract = False, cache_dir = None):
     
     images_gray = np.empty([0,1,512,512], dtype='float32')
     images_label = np.empty([0,1,512,512], dtype='float32')
@@ -173,9 +174,28 @@ def data_preparation(volume_list : str, labelused, z_list = None, tor_slice_diff
     
     
     index = 0
-    for grayVolume, labelVolume in readfiles.reader(volume_list):
+    for (_, line) in pd.read_csv(volume_list, encoding='shift_jis').iterrows():
 
-        image_gray, image_label = slice_preparation(grayVolume, labelVolume, labelused, None if zs is None else zs[index], tor_slice_diff, trunkextract)
+        gray_path, label_path = readfiles.paths(line)
+        usingz = None if zs is None else zs[index]
+
+        def compute():
+            grayVolume, labelVolume = readfiles.readone(line)
+            image_gray, image_label = slice_preparation(grayVolume, labelVolume, labelused, usingz, tor_slice_diff, trunkextract)
+            return {"gray": image_gray, "label": image_label}
+
+        # the volumes are read only on a cache miss
+        prepared = prepcache.cached(cache_dir, "seg_slice",
+                                    {"gray": prepcache.file_signature(gray_path),
+                                     "label": None if label_path is None else prepcache.file_signature(label_path),
+                                     "labelused": labelused,
+                                     "usingz": None if usingz is None else float(usingz),
+                                     "trunkextract": bool(trunkextract),
+                                     "slice_thickness": INPUT_SLICE_THICKNESS,
+                                     "voxel_size": INPUT_VOXEL_SIZE,
+                                     "x_size": INPUT_X_SIZE},
+                                    compute)
+        image_gray, image_label = prepared["gray"], prepared["label"]
         images_gray = np.concatenate((images_gray, image_gray[np.newaxis, np.newaxis, : ,:]), axis=0)
         images_label = np.concatenate((images_label, image_label[np.newaxis, np.newaxis, : ,:]), axis=0)
     
@@ -188,9 +208,10 @@ def data_preparation(volume_list : str, labelused, z_list = None, tor_slice_diff
 
 
 def visual_volume_creation(volume_list : str, estim_labels : np.array, zs : list, labelused : int, 
-                             workdir : str) -> pd.DataFrame:
+                             workdir : str, cache_dir = None) -> pd.DataFrame:
 
     allmetrics = []
+    volume_list_lines = [line for (_, line) in pd.read_csv(volume_list, encoding='shift_jis').iterrows()]
 
     for i, (grayVolume, labelVolume) in enumerate(readfiles.reader(volume_list)):
 
@@ -265,8 +286,13 @@ def visual_volume_creation(volume_list : str, estim_labels : np.array, zs : list
                                              '%s/ill%d.png' % (workdir, i)
                                              )
             
-            # ...and calculate all metrics and tricolor image
-            (tri_volume, tri_png, metrics) = sarcocalculate.calculate(grayVolume, detectedLabelVolume)
+            # ...and calculate all metrics and tricolor image. the trunk mask
+            # depends on the gray volume only, so L1 and L3 share one
+            gray_path, _ = readfiles.paths(volume_list_lines[i])
+            mask = prepcache.cached(cache_dir, "trunk_mask",
+                                    {"gray": prepcache.file_signature(gray_path)},
+                                    lambda: {"mask": extract_trunk.trunk_mask(grayVolume)})["mask"]
+            (tri_volume, tri_png, metrics) = sarcocalculate.calculate(grayVolume, detectedLabelVolume, mask)
             
             sitk.WriteImage(sitk.GetImageFromArray(tri_volume), '%s/tricolor%d.nii.gz' % (workdir, i))
             imageio.imwrite("%s/tricolor%d.png" % (workdir, i), np.stack([tri_png]*3, axis=2).astype('uint8'))
@@ -294,7 +320,8 @@ def main(mode : str,
          workdir : str,
          resultdir : str,
          desc : str,
-         trunkextract : bool
+         trunkextract : bool,
+         cache_dir : str = None
          ):
 
 
@@ -307,7 +334,7 @@ def main(mode : str,
 
 
     # data preparation
-    (images_gray, images_label, zs) = data_preparation(volume_list_file, labelused, z_list_file, tor_slice_diff, trunkextract)
+    (images_gray, images_label, zs) = data_preparation(volume_list_file, labelused, z_list_file, tor_slice_diff, trunkextract, cache_dir)
     
     
     
@@ -424,7 +451,7 @@ def main(mode : str,
         del model
 
         # visual image creation
-        metrics = visual_volume_creation(volume_list_file, estim_labels, zs, labelused, workdir)
+        metrics = visual_volume_creation(volume_list_file, estim_labels, zs, labelused, workdir, cache_dir)
         print(metrics)
         
 
@@ -537,6 +564,8 @@ if __name__ == '__main__':
                         type=str, default='result')
     parser.add_argument('--trunkextract', help = 'turn on a preprocessing (body trunk extract)',
                         action='store_true', default=True)
+    parser.add_argument('--cache_dir', help = 'directory to cache per-case preprocessing in (default: no cache)',
+                        type=str, default=None)
 
 
 

@@ -20,6 +20,7 @@ import unet
 import torchvision.transforms
 
 import readfiles
+import prepcache
 import volumeresampler
 import extract_trunk
 
@@ -49,57 +50,140 @@ def dice_loss(outputs, labels, eps = 1.):
 
 
 
-def data_preparation(volume_list : str, labelused, data_augmentation_multiplier):
+# the elongated volume: 250 mm of margin above the first original slice, then
+# 2 x INPUT_Z_SIZE rows. the margin is a fixed physical length, the same one
+# zshift removes below, so that crop row 0 is always the first original slice
+# whatever the slice thickness. (it used to be 50 original slices, which equals
+# 250 mm only for 5 mm slices and shifted thinner volumes.)
+Z_MARGIN_MM = 50*DEFAULT_ORIGINAL_SLICE_THICKNESS
+ELONGATED_VOXEL_SIZE = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, INPUT_SLICE_THICKNESS]
+ELONGATED_MATRIX_SIZE = [INPUT_X_SIZE, INPUT_X_SIZE, INPUT_Z_SIZE*2]
+GRAY_CLIP = (100, 1000)
+
+
+
+def gray_projections(grayImage) -> dict:
+    '''
+    the 4 feature images of the WHOLE elongated volume, (4, 2*INPUT_Z_SIZE, X).
+
+    every training/test sample is a window of INPUT_Z_SIZE rows of these:
+    clipping is per voxel and the projections run along x or y, so projecting
+    the whole volume and then taking rows gives exactly what cropping first and
+    projecting the crop gave. one resampling and one arm removal per case thus
+    serve every augmented copy, and the result can be cached.
+    '''
+    print("resampling...", end="", flush=True)
+    resampled = volumeresampler.resample(grayImage, -Z_MARGIN_MM, ELONGATED_VOXEL_SIZE, ELONGATED_MATRIX_SIZE, is_label = False, apply_filter = True)
+
+    print("arm killing...", end="", flush=True)
+    resampled = extract_trunk.kill_arms(resampled)
+
+    gRarr = sitk.GetArrayFromImage(resampled)
+
+    # modify grayscale
+    gRarr[gRarr<GRAY_CLIP[0]] = GRAY_CLIP[0]
+    gRarr[GRAY_CLIP[1]<gRarr] = GRAY_CLIP[1]
+
+    # for violation...
+    while len(gRarr.shape) >= 4:
+        gRarr = np.mean(gRarr, axis=3)
+
+    # projection along x- and y-axes
+    g = np.zeros((NUM_FEATURE_IMAGE, gRarr.shape[0], INPUT_X_SIZE), dtype='float32')
+    g[0,:,:] = np.mean(gRarr, axis=2)
+    g[1,:,:] = np.mean(gRarr, axis=1)
+    g[2,:,:] = np.max(gRarr, axis=2)
+    g[3,:,:] = np.max(gRarr, axis=1)
+
+    return {"projections": g, "slice_thickness": grayImage.GetSpacing()[2]}
+
+
+
+def label_projections(labelImage, labelused) -> dict:
+    '''the 2 label images of the whole elongated volume, and the true slice'''
+
+    # true label
+    lorig = sitk.GetArrayFromImage(labelImage)
+
+    sumlabel = np.sum(np.sum(lorig == labelused, axis=2), axis=1)
+    if np.sum(sumlabel) == 0:
+        # no answer
+        ztrue = -1
+    else:
+        ztrue = np.argmax(sumlabel)
+
+    resampled = volumeresampler.resample(labelImage, -Z_MARGIN_MM, ELONGATED_VOXEL_SIZE, ELONGATED_MATRIX_SIZE, is_label = True)
+    lRarr = (sitk.GetArrayFromImage(resampled) == labelused)
+
+    l = np.zeros((NUM_LABEL_IMAGE, lRarr.shape[0], INPUT_X_SIZE), dtype='uint8')
+    l[0,:,:] = np.max(lRarr, axis=2)
+    l[1,:,:] = np.max(lRarr, axis=1)
+
+    return {"projections": l, "ztrue": ztrue, "slice_thickness": labelImage.GetSpacing()[2]}
+
+
+
+def case_projections(line, labelused, cache_dir = None):
+    '''
+    (gray projections, label projections, ztrue, original slice thickness) of
+    one row of the volume list, from the cache when possible. the volumes are
+    read only when something has to be computed.
+    '''
+    gray_path, label_path = readfiles.paths(line)
+
+    images = []
+    def read():
+        if not images:
+            images.extend(readfiles.readone(line))
+        return images
+
+    gray = prepcache.cached(cache_dir, "lumbar_gray",
+                            {"gray": prepcache.file_signature(gray_path),
+                             "z_margin_mm": Z_MARGIN_MM,
+                             "voxel_size": ELONGATED_VOXEL_SIZE,
+                             "matrix_size": ELONGATED_MATRIX_SIZE,
+                             "clip": GRAY_CLIP},
+                            lambda: gray_projections(read()[0]))
+
+    if label_path is None:
+        # no label file: an empty label on the gray volume's grid
+        label = {"projections": np.zeros((NUM_LABEL_IMAGE,) + gray["projections"].shape[1:], dtype='uint8'),
+                 "ztrue": -1,
+                 "slice_thickness": gray["slice_thickness"]}
+    else:
+        label = prepcache.cached(cache_dir, "lumbar_label",
+                                 {"label": prepcache.file_signature(label_path),
+                                  "labelused": labelused,
+                                  "z_margin_mm": Z_MARGIN_MM,
+                                  "voxel_size": ELONGATED_VOXEL_SIZE,
+                                  "matrix_size": ELONGATED_MATRIX_SIZE},
+                                 lambda: label_projections(read()[1], labelused))
+
+    return (gray["projections"], label["projections"],
+            int(label["ztrue"]), float(label["slice_thickness"]))
+
+
+
+def data_preparation(volume_list : str, labelused, data_augmentation_multiplier, cache_dir = None):
 
     i = 0
-    training_gray = np.empty([0,NUM_FEATURE_IMAGE,INPUT_Z_SIZE,INPUT_X_SIZE], dtype='float32')
-    training_label = np.empty([0,2,INPUT_Z_SIZE,INPUT_X_SIZE], dtype='float32')
     zs = []
     ztrues = []
     original_slice_thicknesses = []
 
     # malloc
-    for N in readfiles.counter(volume_list):
-        pass
-    N=N+1
+    df = pd.read_csv(volume_list, encoding='shift_jis')
+    N = len(df)
     training_gray = np.zeros([N*data_augmentation_multiplier,NUM_FEATURE_IMAGE,INPUT_Z_SIZE,INPUT_X_SIZE], dtype='float32')
     training_label = np.zeros([N*data_augmentation_multiplier,2,INPUT_Z_SIZE,INPUT_X_SIZE], dtype='float32')
     
     # main loop
-    for n, (grayImage, labelImage) in enumerate(readfiles.reader(volume_list)):
+    for n, (_, line) in enumerate(df.iterrows()):
 
         print(f"sample #{n}/{N}: ", end="", flush=True)
 
-        # get original voxel size
-        original_slice_thickness = labelImage.GetSpacing()[2]
+        gproj, lproj, ztrue, original_slice_thickness = case_projections(line, labelused, cache_dir)
         original_slice_thicknesses.append(original_slice_thickness)
-
-        # true label
-        lorig = sitk.GetArrayFromImage(labelImage)
-        
-        sumlabel = np.sum(np.sum(lorig == labelused, axis=2), axis=1)
-        if np.sum(sumlabel) == 0:
-            # no answer
-            ztrue = -1
-        else:
-            ztrue = np.argmax(sumlabel)
-            
-        # first resize to (1mm,1mm,1.6666667mm)
-        print("resampling...", end="", flush=True)
-        new_voxel_size = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, INPUT_SLICE_THICKNESS]
-        new_matrix_size_elongated = [INPUT_X_SIZE, INPUT_X_SIZE, INPUT_Z_SIZE*2]
-
-        # get an enlarged volume to allow for data augmentation.
-        # the margin is a fixed physical length (250 mm), the same one zshift
-        # removes below, so that crop row 0 is always the first original slice
-        # whatever the slice thickness. (it used to be 50 original slices, which
-        # equals 250 mm only for 5 mm slices and shifted thinner volumes.)
-        z_margin_mm = 50*DEFAULT_ORIGINAL_SLICE_THICKNESS
-        grayImage = volumeresampler.resample(grayImage, -z_margin_mm, new_voxel_size, new_matrix_size_elongated, is_label = False, apply_filter = True)
-        labelImage = volumeresampler.resample(labelImage, -z_margin_mm, new_voxel_size, new_matrix_size_elongated, is_label = True)
-
-        print("arm killing...", end="", flush=True)
-        grayImage = extract_trunk.kill_arms(grayImage)
 
         print("data augmenting...", end="", flush=True)
 
@@ -120,43 +204,11 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier)
             # shift the image along z-axis
             # round, not floor: 250 / 1.666666666667 is 149.99999999994 in
             # floating point, and floor dropped one row (1.67 mm) every time
-            zshift = int(np.round((zbase + z_margin_mm) / INPUT_SLICE_THICKNESS))
+            zshift = int(np.round((zbase + Z_MARGIN_MM) / INPUT_SLICE_THICKNESS))
 
-            gRarr = sitk.GetArrayFromImage(grayImage)[zshift:zshift+INPUT_Z_SIZE,:,:]
-            lRarr = sitk.GetArrayFromImage(labelImage)[zshift:zshift+INPUT_Z_SIZE,:,:]
-
-            # modify grayscale and label
-            gRarr[gRarr<100] = 100
-            gRarr[1000<gRarr] = 1000
-            lRarr = (lRarr == labelused).astype(float)
-
-            # for violation...
-            while len(gRarr.shape) >= 4:
-                gRarr = np.mean(gRarr, axis=3)
-
-            # projection along x- and y-axes
-            g = np.zeros((1,NUM_FEATURE_IMAGE,INPUT_Z_SIZE,INPUT_X_SIZE), dtype='float32')
-            g[0,0,:,:] = np.mean(gRarr, axis=2)
-            g[0,1,:,:] = np.mean(gRarr, axis=1)
-            g[0,2,:,:] = np.max(gRarr, axis=2)
-            g[0,3,:,:] = np.max(gRarr, axis=1)
-
-            l = np.zeros((1,2,INPUT_Z_SIZE,INPUT_X_SIZE))
-            l[0,0,:,:] = np.max(lRarr, axis=2)
-            l[0,1,:,:] = np.max(lRarr, axis=1)
-
-#            for ii in range(NUM_FEATURE_IMAGE):
-#                plt.imsave("feat_%d_%d.png"%(i,ii), g[0,ii,:,:])
-#            for ii in range(NUM_LABEL_IMAGE):
-#                plt.imsave("labl_%d_%d.png"%(i,ii), l[0,ii,:,:])
-
-            #training_gray = np.concatenate((training_gray, g), axis=0)
-            training_gray[i,:,:,:] = g
-        
-            # 2 label images
-
-            #training_label = np.concatenate((training_label, l), axis=0)
-            training_label[i,:,:,:] = l
+            # a window of the whole-volume projections (see gray_projections)
+            training_gray[i,:,:,:] = gproj[:, zshift:zshift+INPUT_Z_SIZE, :]
+            training_label[i,:,:,:] = lproj[:, zshift:zshift+INPUT_Z_SIZE, :]
 
             i+=1
     
@@ -177,7 +229,8 @@ def main(mode : str,
          output_file_name : str,
          n_epoch : int,
          labelused : int,
-         data_augmentation_multiplier : int):
+         data_augmentation_multiplier : int,
+         cache_dir : str = None):
     
     # build a model
     model = unet.Unet(NUM_FEATURE_IMAGE,NUM_LABEL_IMAGE,16)
@@ -203,7 +256,8 @@ def main(mode : str,
         (training_gray, training_label, zs, ztrues, original_slice_thicknesses) = \
                                                       data_preparation(volume_list, 
                                                                        labelused,
-                                                                       data_augmentation_multiplier)
+                                                                       data_augmentation_multiplier,
+                                                                       cache_dir)
         
         
         
@@ -282,7 +336,8 @@ def main(mode : str,
         test_gray, test_label, zs, ztrues, original_slice_thicknesses = \
                                             data_preparation(volume_list, 
                                                              labelused,
-                                                             data_augmentation_multiplier=1)
+                                                             data_augmentation_multiplier=1,
+                                                             cache_dir=cache_dir)
 
         print("test_gray.shape=", test_gray.shape)
         
@@ -426,6 +481,9 @@ if __name__ == '__main__':
     parser.add_argument('--data_augmentation_multiplier',
                         help='data_augmentation_multiplier (default=10)',
                         type=int, default=10)
+    parser.add_argument('--cache_dir',
+                        help='directory to cache per-case preprocessing in (default: no cache)',
+                        type=str, default=None)
 
 
     args = parser.parse_args()

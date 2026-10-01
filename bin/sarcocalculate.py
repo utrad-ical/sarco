@@ -256,7 +256,8 @@ def calculate_variables(label_visceral, label_superficial, label_muscle, gray, v
 
 
 def calculate(grayimage : sitk.Image,
-              labelimage : sitk.Image
+              labelimage : sitk.Image,
+              trunk_mask : np.array = None
               ) -> Tuple[np.array, np.array, dict]:
     '''
     
@@ -292,7 +293,8 @@ def calculate(grayimage : sitk.Image,
         label_cortical = labelarray[z,:,:] == 2
         label_medullary = labelarray[z,:,:] == 3
 
-        gray_arm_removed = sitk.GetArrayFromImage(extract_trunk.kill_arms(grayimage))
+        # trunk_mask: extract_trunk.trunk_mask(grayimage) if the caller has it
+        gray_arm_removed = sitk.GetArrayFromImage(extract_trunk.kill_arms(grayimage, trunk_mask))
         gray = gray_arm_removed[z,:,:]
         label_trunk = BODY_TRUNK_THRESHOLD_HU < gray
         

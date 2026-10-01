@@ -21,6 +21,7 @@ import torchvision.models.resnet
 import torchvision.transforms
 
 import readfiles
+import prepcache
 import volumeresampler
 
 
@@ -42,7 +43,50 @@ INPUT_Y_SIZE = 512      # voxels
 
 
 
-def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfile = None):
+GRAY_CLIP = (100, 1000)
+
+
+
+def resampled_geometry(grayImage):
+    '''1 mm in plane, the original slices along z'''
+    new_voxel_size = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, grayImage.GetSpacing()[2]]
+    new_matrix_size = [INPUT_X_SIZE, INPUT_X_SIZE, grayImage.GetSize()[2]]
+    return new_voxel_size, new_matrix_size
+
+
+
+def label_presence(grayImage, labelImage, labelused) -> dict:
+    '''the true slice, and whether each resampled slice carries the label'''
+
+    lorig = sitk.GetArrayFromImage(labelImage)
+    ztrue = np.argmax(np.sum(np.sum(lorig == labelused, axis=2), axis=1))
+
+    new_voxel_size, new_matrix_size = resampled_geometry(grayImage)
+    lR = volumeresampler.resample(labelImage, 0, new_voxel_size, new_matrix_size)
+    lRarr = (sitk.GetArrayFromImage(lR) == labelused).astype(float)
+    presence = np.max(np.max(lRarr, axis=2), axis=1).astype('uint8')
+
+    return {"ztrue": ztrue, "presence": presence}
+
+
+
+def gray_window(grayImage, startindexz, endindexz):
+    '''slices [startindexz, endindexz) resampled to 1 mm in plane and clipped'''
+
+    new_voxel_size, new_matrix_size = resampled_geometry(grayImage)
+    gR = volumeresampler.resample(grayImage, 0, new_voxel_size, new_matrix_size)
+
+    gRarr = sitk.GetArrayFromImage(gR)[startindexz : endindexz, :, :]
+
+    # modify grayscale
+    gRarr[gRarr<GRAY_CLIP[0]] = GRAY_CLIP[0]
+    gRarr[GRAY_CLIP[1]<gRarr] = GRAY_CLIP[1]
+
+    return gRarr
+
+
+
+def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfile = None, cache_dir = None):
 
     i = 0
     
@@ -80,35 +124,48 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
             searchalls = [False, ] * len(detectedzs)
     
     i = 0
-    for (grayImage, labelImage) in readfiles.reader(volume_list):
-        
-        # true label
-        lorig = sitk.GetArrayFromImage(labelImage)
-        ztrue = np.argmax(np.sum(np.sum(lorig == labelused, axis=2), axis=1))
+    for (_, line) in pd.read_csv(volume_list, encoding='shift_jis').iterrows():
+
+        gray_path, label_path = readfiles.paths(line)
+
+        # the volumes are read only when something has to be computed
+        images = []
+        def read():
+            if not images:
+                images.extend(readfiles.readone(line))
+            return images
+
+        # geometry from the header alone
+        info = sitk.ImageFileReader()
+        info.SetFileName(gray_path)
+        info.ReadImageInformation()
+        zsize = info.GetSize()[2]
+        zspacing = info.GetSpacing()[2]
+
+        # true label, and which resampled slices carry it
+        if label_path is None:
+            # no label file: an empty label
+            label = {"ztrue": 0, "presence": np.zeros(zsize, dtype='uint8')}
+        else:
+            label = prepcache.cached(cache_dir, "modifier_label",
+                                     {"label": prepcache.file_signature(label_path),
+                                      "gray_geometry": [list(info.GetSize()), list(info.GetSpacing())],
+                                      "labelused": labelused},
+                                     lambda: label_presence(read()[0], read()[1], labelused))
+        ztrue = int(label["ztrue"])
 
         ztrues.append(ztrue)
         
         
         
-        zdirection = grayImage.GetDirection()[8]
-#        print(f"{zdirection=}")
-        zspacing = grayImage.GetSpacing()[2]
-#        print(f"{zspacing=}")
-        
-        
-        
         # if test, only partial volume is used
-        if istest and (detectedzs[i] < 0 or grayImage.GetSize()[2]<=detectedzs[i]):
+        if istest and (detectedzs[i] < 0 or zsize<=detectedzs[i]):
             # out of view
             basez = -100000
             depthz= 0
             pass
         else:
-            searchalls = False
-            if(istest and searchalls):
-                basez = 0
-                depthz = numslice
-            elif(istest and not searchalls):
+            if istest:
                 basez = detectedzs[i] * zspacing - 20
                 depthz = int(40 / zspacing)
             else:
@@ -125,87 +182,27 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
         # was silently dropped in training and reported as not detected in test.
         startindexz = int(np.round(basez/zspacing))
         endindexz = startindexz + depthz
-        startindexz = int(np.clip(startindexz, 0, grayImage.GetSize()[2]))
-        endindexz = int(np.clip(endindexz, startindexz, grayImage.GetSize()[2]))
+        startindexz = int(np.clip(startindexz, 0, zsize))
+        endindexz = int(np.clip(endindexz, startindexz, zsize))
 
         # the slice index the window starts at, to map the argmax back
         basezs.append(startindexz)
-        
-        
-#        print(f"z search {basez=}, {depthz=}")
 
-        new_voxel_size = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, grayImage.GetSpacing()[2]]
-        new_matrix_size = [INPUT_X_SIZE, INPUT_X_SIZE, grayImage.GetSize()[2]]
-        
-        gR = volumeresampler.resample(grayImage, 0, new_voxel_size, new_matrix_size)
-        lR = volumeresampler.resample(labelImage, 0, new_voxel_size, new_matrix_size)
-        
-        if 0:
-            
-            # resize to (1mm,1mm,(original)mm)
-            resample = sitk.ResampleImageFilter()
-            resample.SetOutputDirection(grayImage.GetDirection())
-            resample.SetOutputOrigin(grayImage.GetOrigin())
-            new_spacing = [INPUT_VOXEL_SIZE, INPUT_VOXEL_SIZE, zspacing]
-            resample.SetOutputSpacing(new_spacing)
-
-            gRspac = resample.GetOutputSpacing()
-
-            gIorig = grayImage.GetOrigin()
-            gIspac = grayImage.GetSpacing()
-            gIsize = grayImage.GetSize()
-            gIdire = grayImage.GetDirection()
-
-            gRsize = [INPUT_X_SIZE, INPUT_X_SIZE, gIsize[2]]
-            resample.SetSize(gRsize)
-            gRsize = resample.GetSize()
-            
-            gRorigin_bkup = np.array(gIorig)
-            gRorigin = np.array(gIorig) + (np.array(gIspac)*np.array(gIsize))/2 - (np.array(gRsize)*np.array(gRspac))/2
-            gRorigin[2] = gIorig[2]
-
-            print(f"{gIorig=}, {gIspac=}, {gRsize=}, {gRspac=}, {gRorigin=}, {gIdire=}")
-
-            resample.SetOutputOrigin(gRorigin)
-            
-            resample.SetUseNearestNeighborExtrapolator(False)
-            
-            resample.SetInterpolator(sitk.sitkLinear)
-            resample.SetDefaultPixelValue(-1000)
-            gR = resample.Execute(grayImage)
-
-            resample.SetInterpolator(sitk.sitkNearestNeighbor)
-            resample.SetDefaultPixelValue(0)
-            lR = resample.Execute(labelImage)
-
-        # get partial volume
-        gRarr = sitk.GetArrayFromImage(gR)
-        lRarr = sitk.GetArrayFromImage(lR)
-        lRarr = (lRarr == labelused).astype(float)
-
-        gRarr = gRarr[startindexz : endindexz, :, :]
-        lRarr = lRarr[startindexz : endindexz, :, :]
-
-        # modify grayscale and label
-        gRarr[gRarr<100] = 100
-        gRarr[1000<gRarr] = 1000
-
-#        plt.imsave('__testu.png', gRarr[0,:,:])
-#        plt.imsave('__testd.png', gRarr[-1,:,:])
-#        sitk.WriteImage(sitk.GetImageFromArray(gRarr), 'gRarr.mhd')
-
-        l = np.squeeze(np.max(np.max(lRarr,axis=2), axis=1)).astype('int64')
+        l = label["presence"][startindexz:endindexz].astype('int64')
 
         print(l)
 
-        g = np.repeat(gRarr[:, np.newaxis, :, :], 3, axis=1)
-        
-        if np.prod(l.shape) == 0:
+        if l.shape[0] == 0:
             # l is empty
             pass
         else:
-            l = np.max(np.max(lRarr,axis=2), axis=1).astype('int64')
-        
+            window = prepcache.cached(cache_dir, "modifier_gray",
+                                      {"gray": prepcache.file_signature(gray_path),
+                                       "start": startindexz, "end": endindexz,
+                                       "clip": GRAY_CLIP},
+                                      lambda: {"window": gray_window(read()[0], startindexz, endindexz)})
+            g = np.repeat(window["window"][:, np.newaxis, :, :], 3, axis=1)
+
             #training_gray = np.concatenate((training_gray, g), axis=0)
             #training_label = np.concatenate((training_label, l), axis=0)
             training_gray_list.append(g)
@@ -214,7 +211,7 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
             case_indices += [i,] * l.shape[0] # for recover of indices
 
         i+=1
-    
+
     training_gray = np.concatenate(training_gray_list, axis=0)
     training_label = np.concatenate(training_label_list, axis=0)
     
@@ -237,7 +234,8 @@ def main(mode : str,
          input_file_name : str,
          output_file_name : str,
          n_epoch : int,
-         labelused : int):
+         labelused : int,
+         cache_dir : str = None):
     
     # build a model
     model = torchvision.models.densenet121(num_classes = 2)
@@ -261,7 +259,8 @@ def main(mode : str,
         
         # data preparation
         (training_gray, training_label, zs, ztrues, _, _) = data_preparation(volume_list, 
-                                                                       labelused, False)
+                                                                       labelused, False,
+                                                                       cache_dir=cache_dir)
         
         
         
@@ -326,7 +325,8 @@ def main(mode : str,
         test_gray, test_label, zs, ztrues, basezs, case_indices = data_preparation(volume_list, 
                                                                                    labelused, 
                                                                                    True, 
-                                                                                   input_file_name)
+                                                                                   input_file_name,
+                                                                                   cache_dir=cache_dir)
         
         num_cases = len(ztrues)
         print("case num = %d" % num_cases)
@@ -429,6 +429,9 @@ if __name__ == '__main__':
     parser.add_argument('--labelused',
                         help='label index to be used (default=2)',
                         type=int, default=2)
+    parser.add_argument('--cache_dir',
+                        help='directory to cache per-case preprocessing in (default: no cache)',
+                        type=str, default=None)
 
 
     args = parser.parse_args()

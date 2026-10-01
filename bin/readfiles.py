@@ -53,6 +53,15 @@ def readone(line):
 
 
 
+def paths(line):
+    '''(gray path, label path or None) of one row of a volume list'''
+    gray_path = line["{volume_name}"].strip()
+    if "{label_volume_name}" in line:
+        return gray_path, line["{label_volume_name}"].strip()
+    return gray_path, None
+
+
+
 def reader(volume_list_file : str):
     
     df = pd.read_csv(volume_list_file, encoding='shift_jis')

@@ -62,9 +62,9 @@ def extract(image: np.array) -> np.array:
 
 
 
-def kill_arms(volume: sitk.Image) -> sitk.Image:
+def trunk_mask(volume: sitk.Image) -> np.array:
     '''
-    3-D body trunk extractor for sitk volume
+    boolean [z,y,x] mask of the body trunk of a sitk volume, on its own grid
     '''
 
     original_voxel_size = volume.GetSpacing()
@@ -82,10 +82,21 @@ def kill_arms(volume: sitk.Image) -> sitk.Image:
 
     trunk_label = volumeresampler.resample(trunk_label_thick, 0, volume.GetSpacing(), volume.GetSize(), is_label = True)
 
+    return sitk.GetArrayFromImage(trunk_label) != 0
+
+
+
+def kill_arms(volume: sitk.Image, mask: np.array = None) -> sitk.Image:
+    '''
+    3-D body trunk extractor for sitk volume.
+    mask: trunk_mask(volume), when it has already been computed (or cached)
+    '''
+
+    if mask is None:
+        mask = trunk_mask(volume)
 
     arr1 = sitk.GetArrayFromImage(volume)
-    arr2 = sitk.GetArrayFromImage(trunk_label)
-    arr1[arr2 == 0] = -1000
+    arr1[~mask] = -1000
     new_volume = sitk.GetImageFromArray(arr1)
 
     new_volume.SetSpacing(volume.GetSpacing())
