@@ -32,7 +32,7 @@ import numpy as np
 CACHE_VERSIONS = {
     "lumbar_gray": 1,       # lumbar.py: projections of the elongated volume
     "lumbar_label": 1,      # lumbar.py: label projections and true z
-    "modifier_label": 1,    # lumbarmodifier.py: per-slice label presence
+    "modifier_label": 2,    # lumbarmodifier.py: per-slice label presence (2: nearest-neighbour label resampling)
     "modifier_gray": 1,     # lumbarmodifier.py: search window
     "seg_slice": 1,         # sarcosegmentation.py: the slice to segment
     "trunk_mask": 1,        # extract_trunk.py: body trunk mask (arm removal)

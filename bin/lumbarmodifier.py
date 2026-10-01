@@ -62,7 +62,10 @@ def label_presence(grayImage, labelImage, labelused) -> dict:
     ztrue = np.argmax(np.sum(np.sum(lorig == labelused, axis=2), axis=1))
 
     new_voxel_size, new_matrix_size = resampled_geometry(grayImage)
-    lR = volumeresampler.resample(labelImage, 0, new_voxel_size, new_matrix_size)
+    # nearest neighbour: linear interpolation of a multi-label image creates
+    # in-between values at label borders (between 0 and 2 it passes through
+    # 1), so another structure was flagged as the target label
+    lR = volumeresampler.resample(labelImage, 0, new_voxel_size, new_matrix_size, is_label = True)
     lRarr = (sitk.GetArrayFromImage(lR) == labelused).astype(float)
     presence = np.max(np.max(lRarr, axis=2), axis=1).astype('uint8')
 
