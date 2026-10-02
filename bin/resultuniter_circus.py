@@ -8,12 +8,16 @@ import os
 
 
 
-df1 = pd.read_csv(sys.argv[1], encoding='shift_jis')
-df2 = pd.read_csv(sys.argv[2], encoding='shift_jis')
+def records(path):
+    """rows of a result table; none when a level could not be processed at all"""
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        print(f"[resultuniter] {path} not found; that level is left empty")
+        return []
+    return pd.read_csv(path, encoding='shift_jis').to_dict(orient='records')
 
 
 
-d = {"results": {"L1": df1.to_dict(orient='records'), "L3": df2.to_dict(orient='records')}}
+d = {"results": {"L1": records(sys.argv[1]), "L3": records(sys.argv[2])}}
 
 # optional 4th argument: __estimates.csv of estimate.py (age, phase, body size,
 # phase-0 equivalent values); shown as results.estimates.0.<name>

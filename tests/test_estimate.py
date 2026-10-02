@@ -132,3 +132,16 @@ def test_results_json_carries_the_estimates(tmp_path, model_dir):
         subprocess.run(uniter + extra, check=True, capture_output=True)
         d = json.loads((res / "results.json").read_text())["results"]
         assert "estimates" not in d and d["L3"][0]["L3_SMA"] == 100.0
+
+
+def test_a_level_without_any_table_still_gives_results_json(tmp_path, model_dir):
+    """lumbar/modifier could not place L3 at all: no __result_L3.csv is written."""
+    _, res = run(tmp_path, model_dir, levels=("L1",))
+    (res / "__result_L3.csv").unlink()
+    subprocess.run([sys.executable, str(BIN / "resultuniter_circus.py"),
+                    str(res / "__result_L1.csv"), str(res / "__result_L3.csv"),
+                    str(res / "results.json"), str(res / "__estimates.csv")],
+                   check=True, capture_output=True)
+    d = json.loads((res / "results.json").read_text())["results"]
+    assert d["L3"] == [] and d["L1"][0]["L1_MSMD"] == 40.0
+    assert d["estimates"][0]["phase_n_levels"] == 1

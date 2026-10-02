@@ -215,6 +215,10 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
 
         i+=1
 
+    if not training_gray_list:
+        # every case out of view (test), e.g. L3 below an upper-abdominal scan
+        return None, None, zs, ztrues, basezs, case_indices
+
     training_gray = np.concatenate(training_gray_list, axis=0)
     training_label = np.concatenate(training_label_list, axis=0)
     
@@ -332,7 +336,16 @@ def main(mode : str,
                                                                                    True, 
                                                                                    input_file_name,
                                                                                    cache_dir=cache_dir)
-        
+
+        if test_gray is None:
+            # nothing to refine: report every case as out of view (z = -1)
+            df = pd.read_csv(input_file_name, encoding='shift_jis')
+            df["{z_modified}"] = -1
+            df["{likelihoods_modified}"] = -1000.0
+            print(df)
+            df.iloc[:,0:].to_csv(output_file_name, encoding='shift-jis')
+            return
+
         num_cases = len(ztrues)
         print("case num = %d" % num_cases)
         
@@ -364,6 +377,14 @@ def main(mode : str,
 
                 base_index += batchsz
                 
+        # number of slices of each volume, for the edge rule below
+        zsizes = []
+        for (_, line) in readfiles.read_list(volume_list).iterrows():
+            info = sitk.ImageFileReader()
+            info.SetFileName(readfiles.paths(line)[0])
+            info.ReadImageInformation()
+            zsizes.append(info.GetSize()[2])
+
         # reconstruction
         zestimates = np.ndarray((num_cases))
         case_indices = np.array(case_indices)
@@ -381,6 +402,15 @@ def main(mode : str,
                 zestimates[ind_case] = -1
                 likelihoods_cases[ind_case] = -1000.0
                 print(e)
+            # a level found on the first or last slice is taken as out of view:
+            # when the vertebra lies beyond the scan, the search window is
+            # clamped to the edge and the argmax lands there
+            if zestimates[ind_case] >= 0 and zsizes[ind_case] > 2 and \
+                    zestimates[ind_case] in (0, zsizes[ind_case] - 1):
+                print(f"case #{ind_case}: z={int(zestimates[ind_case])} is on the edge of the "
+                      f"volume; treated as out of view")
+                zestimates[ind_case] = -1
+                likelihoods_cases[ind_case] = -1000.0
         
         if 0: # obsolete
             with open(output_file_name, "wt") as f:
