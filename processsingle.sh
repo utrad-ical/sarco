@@ -14,10 +14,16 @@ mkdir -p $TEMPDIR
 
 LISTFILE=$TEMPDIR/list.txt
 
-> $LISTFILE echo {volume_name}
->> $LISTFILE echo $INDIR/0.mhd
-
 mkdir -p $OUTPUTROOT
+
+# the pipeline expects the slices head first; a volume that runs feet first is
+# reversed here (header kept) and the result labels are put back at the end
+# (bin/orientation.py; without model/orientation.pt the input is used as is)
+INPUT=$TEMPDIR/input/0.mhd
+python bin/orientation.py check --input $INDIR/0.mhd --output $INPUT --report $OUTPUTROOT/__orientation.json --model model/orientation.pt --device cuda
+
+> $LISTFILE echo {volume_name}
+>> $LISTFILE echo $INPUT
 
 WORKDIRROOT=$TEMPDIR/work
 RESULTDIR=$OUTPUTROOT
@@ -51,7 +57,10 @@ python bin/sarcosegmentation.py --mode test --volume_list_file=$WORKDIR_L3/l3mod
 
 # age, contrast phase, body size and phase-0 equivalent values (ct25d checkpoints in model/;
 # a missing checkpoint only skips that estimate)
-python bin/estimate.py --gray $INDIR/0.mhd --resultdir $RESULTDIR --model_dir model --device cuda --cache_dir $CACHEDIR
+python bin/estimate.py --gray $INPUT --resultdir $RESULTDIR --model_dir model --device cuda --cache_dir $CACHEDIR
+
+# result labels and slice numbers back in the input's own slice order
+python bin/orientation.py restore --report $RESULTDIR/__orientation.json --resultdir $RESULTDIR
 
 python bin/resultuniter_circus.py $RESULTDIR/__result_L1.csv $RESULTDIR/__result_L3.csv $RESULTDIR/results.json $RESULTDIR/__estimates.csv
 

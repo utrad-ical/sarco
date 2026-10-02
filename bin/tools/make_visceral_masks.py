@@ -19,6 +19,7 @@ and a manifest <out_dir>/manifest.csv with the QC numbers per row:
 """
 
 import argparse
+import multiprocessing
 import os
 import sys
 import traceback
@@ -121,7 +122,8 @@ def main(argv=None):
                 if not (out_dir / (j["name"] + ".visceral.nii.gz")).exists()]
 
     rows = []
-    with ProcessPoolExecutor(args.workers) as pool:
+    # spawn, not fork: a caller with threads running could deadlock a forked child
+    with ProcessPoolExecutor(args.workers, mp_context=multiprocessing.get_context("spawn")) as pool:
         for i, row in enumerate(pool.map(process, jobs, [out_dir] * len(jobs),
                                          chunksize=4)):
             rows.append(row)

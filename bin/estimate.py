@@ -41,6 +41,8 @@ PHASE_NAMES = {0: "plain", 1: "early arterial", 2: "late arterial",
                3: "portal venous", 4: "equilibrium"}
 CORRECTED = ("MSMD", "meanVAT", "meanSAT", "cortical_density", "medullary_density")
 AGE_MODELS = [("marrow", "L1"), ("marrow", "L3"), ("muscle", "L1"), ("muscle", "L3")]
+# direction cosines that make physical z follow the (head-first) index order
+INDEX_ORDER = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0)
 
 
 def level_inputs(resultdir : Path, level : str):
@@ -161,15 +163,20 @@ def main(argv=None):
             return
         from ct25d.bodysize import (BodySizeGeometry, level_z_mm, load_bodysize,
                                     predict_bodysize, prepare_case)
+        from ct25d.geometry import with_direction
         model, stds, cfg, scales, _ = load_bodysize(path, map_location=device)
         g = cfg["geometry"]
         geometry = BodySizeGeometry(**{k: (tuple(v) if k == "window" else v)
                                        for k, v in g.items()})
+        # the slices are head first here (orientation.py), so the frame is
+        # set from the index order rather than from the header's z direction
+        g, l1 = with_direction(gray, labels[0], INDEX_ORDER)
+        _, l3 = with_direction(gray, labels[1], INDEX_ORDER)
         mask = prepcache.cached(args.cache_dir, "trunk_mask",
                                 {"gray": prepcache.file_signature(args.gray)},
                                 lambda: {"mask": extract_trunk.trunk_mask(gray)})["mask"]
-        case = prepare_case(gray, mask.astype(bool), level_z_mm(labels[0]),
-                            level_z_mm(labels[1]), geometry=geometry)
+        case = prepare_case(g, mask.astype(bool), level_z_mm(l1), level_z_mm(l3),
+                            geometry=geometry)
         res = predict_bodysize(model, stds, scales, [case], cfg["targets"], device=device)
         for t, (m, s, lo, hi) in res.items():
             out.update({t: float(m[0]), t + "_sigma": float(s[0]),
@@ -199,6 +206,13 @@ def main(argv=None):
                         continue
                     y = c["a"] + c["b"] * float(x)
                 out[f"{lv}_{v}_phase0"] = y
+
+    orient = resultdir / "__orientation.json"
+    if orient.exists():
+        o = json.loads(orient.read_text())
+        out["input_feet_first"] = int(bool(o.get("flipped")))
+        if "prob_feet_first" in o:
+            out["input_feet_first_prob"] = float(o["prob_feet_first"])
 
     for name, fn in (("age", age), ("phase", phase), ("body size", body),
                      ("phase-0 values", corrected)):

@@ -1,7 +1,7 @@
 {
   "type": "CAD",
   "pluginName": "Sarcopenia",
-  "version": "8.1.0",
+  "version": "8.2.0",
   "description": "Evaluates sarcopenia from torso CT",
   "icon": {
     "glyph": "calc",
@@ -37,6 +37,14 @@
               },
               {
                 "customLabel": "L1"
+              },
+              {
+                "customLabel": "Age (marrow): ",
+                "dataPath": "results.estimates.0.age_marrow_L1"
+              },
+              {
+                "customLabel": "Age (muscle): ",
+                "dataPath": "results.estimates.0.age_muscle_L1"
               },
               {
                 "customLabel": "SMA: ",
@@ -110,6 +118,14 @@
             "labelData": [
               {
                 "customLabel": "L3"
+              },
+              {
+                "customLabel": "Age (marrow): ",
+                "dataPath": "results.estimates.0.age_marrow_L3"
+              },
+              {
+                "customLabel": "Age (muscle): ",
+                "dataPath": "results.estimates.0.age_muscle_L3"
               },
               {
                 "customLabel": "SMA: ",
