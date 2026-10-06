@@ -145,3 +145,16 @@ def test_a_level_without_any_table_still_gives_results_json(tmp_path, model_dir)
     d = json.loads((res / "results.json").read_text())["results"]
     assert d["L3"] == [] and d["L1"][0]["L1_MSMD"] == 40.0
     assert d["estimates"][0]["phase_n_levels"] == 1
+
+
+def test_body_size_from_one_level_with_a_level_dropping_model(tmp_path, model_dir):
+    from conftest import write_bodysize
+
+    m = tmp_path / "model"
+    shutil.copytree(model_dir, m)
+    write_bodysize(m / "bodysize.pt", p_drop=0.15)
+    for levels in (("L1",), ("L3",)):
+        e, _ = run(tmp_path / levels[0], m, levels=levels)
+        assert e.body_n_levels == 1 and e.height_lo95 < e.height < e.height_hi95
+    e, _ = run(tmp_path / "both", m)
+    assert e.body_n_levels == 2

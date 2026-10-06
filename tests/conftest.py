@@ -114,7 +114,7 @@ def write_ct25d(path, task, label_value, seed):
     save_checkpoint(path, model, std, cfg, sigma_scale=1.0, temperature=1.0)
 
 
-def write_bodysize(path):
+def write_bodysize(path, p_drop=0.0):
     import torch
     from ct25d.bodysize import BodySizeGeometry, BodySizeNet, save_bodysize
     from ct25d.transforms import TargetStandardizer
@@ -125,7 +125,7 @@ def write_bodysize(path):
     stds = {"height": TargetStandardizer().fit([150.0, 175.0]),
             "weight": TargetStandardizer().fit([45.0, 80.0])}
     cfg = dict(model=dict(norm="group", dropout=0.0, use_cbam=True, n_targets=2),
-               targets=["height", "weight"], geometry=g.as_dict())
+               targets=["height", "weight"], geometry=g.as_dict(), p_drop=p_drop)
     save_bodysize(path, BodySizeNet(**cfg["model"]), stds, cfg,
                   {"height": 1.0, "weight": 1.0})
 
