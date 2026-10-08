@@ -96,7 +96,7 @@ SMALL_CT25D = dict(crop_size=32, n_slices=3, gap_mm=5.0, slab_mm=0.0, in_plane_m
                    gate=None, log_target=False, target_power=0, hu_shift=0.0)
 
 
-def write_ct25d(path, task, label_value, seed):
+def write_ct25d(path, task, label_value, seed, n_classes=5):
     import torch
     from ct25d.checkpoint import build_model, save_checkpoint
     from ct25d.transforms import TargetStandardizer
@@ -105,7 +105,7 @@ def write_ct25d(path, task, label_value, seed):
     arch = dict(name="resnet18", n_slices=3, n_mask_channels=1, norm="group",
                 dropout=0.0, use_cbam=True)
     if task == "classification":
-        arch["n_classes"] = 5
+        arch["n_classes"] = n_classes
     model = build_model(arch)
     cfg = dict(SMALL_CT25D, arch=arch, task=task, label_value=label_value,
                target="phase" if task == "classification" else "age",

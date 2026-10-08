@@ -64,7 +64,7 @@ CIRCUSのインターフェースからプラグインを起動すると、`proc
 `processsingle.sh` は、L1/L3 の解析のあとに `bin/estimate.py` を実行します。結果は `__estimates.csv` に書かれ、`results.json` の `results.estimates` に入ります。推定には [ct25d-regressor](https://github.com/hanaokalog/ct25d-regressor) を使います（Dockerfile でコミットを固定してインストール）。`model/` にないチェックポイントの推定は飛ばし、残りはそのまま実行します。
 
 *   **年齢** (`age`): L1/L3 の椎体髄質（ラベル3）と筋肉（ラベル1）の4モデル（`model/age_{marrow,muscle}_L{1,3}.pt`）を、逆分散で重み付けして統合します。統合後の幅は `model/age_combination.json` の係数で補正しています（4モデルは独立ではないため）。4モデルそれぞれの値と95%区間も `age_marrow_L1`, `age_marrow_L3`, `age_muscle_L1`, `age_muscle_L3`（`_sigma`, `_lo95`, `_hi95` 付き）として出力し、CIRCUS 上にも表示します。
-*   **造影相** (`phase`, `phase_name`): 内臓領域マスクから L1/L3 で推定し（`model/phase_L{1,3}.pt`）、得られたレベルの確率を平均して最も確率の高い相を1つ選びます。0 単純、1 早期動脈相、2 後期動脈相、3 門脈相、4 平衡相。**L1 か L3 の一方しか撮影範囲に入っていない場合**（上腹部のダイナミックCTなど）は、写っている方だけで推定します（`phase_n_levels` が 1）。両方とも範囲外なら推定しません。
+*   **造影相** (`phase`, `phase_name`): 内臓領域マスクから L1/L3 で推定し（`model/phase_L{1,3}.pt`）、得られたレベルの確率を平均して最も確率の高い相を1つ選びます。0 単純、1 早期動脈相、2 後期動脈相、3 門脈相、4 平衡相。相の名前はモデルのクラス数で決まります（`estimate.PHASE_SCHEMES`。6クラスのモデルでは 0 単純、1 早期動脈相、2 後期動脈相、3 門脈相、4 静脈相、5 平衡相）。`phase_correction.json` の `phases` の数がモデルのクラス数と違うときは、時相0相当値を出しません。**L1 か L3 の一方しか撮影範囲に入っていない場合**（上腹部のダイナミックCTなど）は、写っている方だけで推定します（`phase_n_levels` が 1）。両方とも範囲外なら推定しません。
 *   **身長・体重** (`height`, `weight`): 体幹（腕と寝台を除いたもの）の投影像と L1/L3 断面から推定します（`model/bodysize.pt`, `ct25d.bodysize`）。一方のレベルしか撮影範囲にない場合は、そのレベルだけから推定します（`body_n_levels` が 1。学習時に一方を落とした例も混ぜています）。
 *   **時相0相当値** (`<L1|L3>_<項目>_phase0`): MSMD, meanVAT, meanSAT, cortical_density, medullary_density を、推定した造影相の線形式 `値0 = a + b × 値k` で単純CT相当に換算します（`model/phase_correction.json`、レベル・項目・相ごと。相0はそのまま）。式は akamatsu コホートの同一検査の相0と相kの組から最小二乗で求めました。
 

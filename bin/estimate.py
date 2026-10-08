@@ -5,14 +5,16 @@ Estimates from the L1/L3 results with ct25d-regressor checkpoints in model/:
            (muscle, label 1); combined by inverse-variance weighting, the
            combined sigma widened by age_combination.json
   phase    phase_L1/L3.pt (visceral mask); the L1 and L3 probabilities are
-           averaged and the most probable phase is taken, one per examination
-           (0 plain, 1 early arterial, 2 late arterial, 3 portal venous,
-           4 equilibrium)
+           averaged and the most probable phase is taken, one per examination;
+           the phase names follow the number of classes (PHASE_SCHEMES:
+           5 = v8, 0 plain .. 4 equilibrium; 6 = v9, with portal and venous
+           split)
   body     bodysize.pt: height and weight from the trunk projections and the
            L1/L3 planes
   phase-0  phase_correction.json: MSMD, meanVAT, meanSAT, cortical_density and
            medullary_density converted to the plain-CT equivalent with the
-           linear formula of the estimated phase (unchanged for phase 0)
+           linear formula of the estimated phase (unchanged for phase 0); only
+           when the file's phase list matches the phase models' classes
 
 A missing checkpoint, or a level without a result, skips that estimate and the
 rest still runs. Writes <resultdir>/__estimates.csv (one row; shift_jis like
@@ -37,8 +39,14 @@ import readfiles
 
 
 LEVELS = ("L1", "L3")
-PHASE_NAMES = {0: "plain", 1: "early arterial", 2: "late arterial",
-               3: "portal venous", 4: "equilibrium"}
+# contrast phases by the number of classes of the phase models
+PHASE_SCHEMES = {
+    5: {0: "plain", 1: "early arterial", 2: "late arterial", 3: "portal venous",
+        4: "equilibrium"},
+    6: {0: "plain", 1: "early arterial", 2: "late arterial", 3: "portal",
+        4: "venous", 5: "equilibrium"},
+}
+PHASE_NAMES = PHASE_SCHEMES[5]
 CORRECTED = ("MSMD", "meanVAT", "meanSAT", "cortical_density", "medullary_density")
 AGE_MODELS = [("marrow", "L1"), ("marrow", "L3"), ("muscle", "L1"), ("muscle", "L3")]
 # direction cosines that make physical z follow the (head-first) index order
@@ -144,11 +152,17 @@ def main(argv=None):
             out[f"phase_{lv}"] = r["pred"]
             out[f"phase_{lv}_conf"] = r["conf"]
             probs.append(r["probs"])
+        if len({len(p) for p in probs}) > 1:
+            print("[estimate] the L1 and L3 phase models have different classes "
+                  f"({[len(p) for p in probs]}); no combined phase")
+            return
         if probs:
             prob = np.mean(probs, axis=0)
             k = int(np.argmax(prob))
-            out.update(phase=k, phase_name=PHASE_NAMES.get(k, str(k)),
-                       phase_conf=float(prob[k]), phase_n_levels=len(probs))
+            names = PHASE_SCHEMES.get(len(prob), {})
+            out.update(phase=k, phase_name=names.get(k, str(k)),
+                       phase_conf=float(prob[k]), phase_n_levels=len(probs),
+                       phase_n_classes=len(prob))
             out.update({f"phase_prob_{i}": float(v) for i, v in enumerate(prob)})
 
     def body(out):
@@ -195,7 +209,15 @@ def main(argv=None):
             print("[estimate] no phase estimate or no phase_correction.json; "
                   "no phase-0 values")
             return
-        coef = json.loads(path.read_text())["coefficients"]
+        table = json.loads(path.read_text())
+        # the formulas are per phase index: the file must use the same phases
+        # (a file without the list is the 5-phase v8 one)
+        n_file = len(table.get("phases", PHASE_SCHEMES[5]))
+        if n_file != int(out["phase_n_classes"]):
+            print(f"[estimate] phase_correction.json has {n_file} phases, the phase "
+                  f"models {int(out['phase_n_classes'])}; no phase-0 values")
+            return
+        coef = table["coefficients"]
         k = int(out["phase"])
         for lv in LEVELS:
             row = inputs[lv][2]

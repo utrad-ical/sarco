@@ -158,3 +158,45 @@ def test_body_size_from_one_level_with_a_level_dropping_model(tmp_path, model_di
         assert e.body_n_levels == 1 and e.height_lo95 < e.height < e.height_hi95
     e, _ = run(tmp_path / "both", m)
     assert e.body_n_levels == 2
+
+
+def six_phase_models(tmp_path, model_dir, phases_in_file):
+    """model_dir with 6-class (v9) phase models and a correction file listing phases_in_file"""
+    from conftest import write_ct25d
+
+    m = tmp_path / "model"
+    shutil.copytree(model_dir, m)
+    for i, lv in enumerate(("L1", "L3")):
+        write_ct25d(m / f"phase_{lv}.pt", "classification", 1, seed=20 + i, n_classes=6)
+    coef = {lv: {v: {str(k): {"a": 10.0 * k, "b": 1.0 + k / 10, "n": 100} for k in range(1, phases_in_file)}
+                 for v in estimate.CORRECTED} for lv in ("L1", "L3")}
+    phases = {str(k): estimate.PHASE_SCHEMES.get(phases_in_file, {}).get(k, str(k)) for k in range(phases_in_file)}
+    (m / "phase_correction.json").write_text(json.dumps({"phases": phases, "coefficients": coef}))
+    return m
+
+
+def test_six_phase_models_take_the_v9_names_and_formulas(tmp_path, model_dir):
+    e, _ = run(tmp_path, six_phase_models(tmp_path, model_dir, 6))
+    probs = np.array([e[f"phase_prob_{k}"] for k in range(6)])
+    assert probs.sum() == pytest.approx(1.0) and "phase_prob_6" not in e
+    assert e.phase_n_classes == 6 and e.phase_name == estimate.PHASE_SCHEMES[6][e.phase]
+    k = int(e.phase)
+    want = METRICS["L1"]["MSMD"] if k == 0 else 10.0 * k + (1 + k / 10) * METRICS["L1"]["MSMD"]
+    assert e.L1_MSMD_phase0 == pytest.approx(want)
+
+
+def test_a_correction_file_for_other_phases_is_not_applied(tmp_path, model_dir):
+    e, _ = run(tmp_path, six_phase_models(tmp_path, model_dir, 5))
+    assert e.phase_n_classes == 6 and np.isfinite(e.phase)
+    assert not any(c.endswith("_phase0") for c in e.index)
+
+
+def test_phase_models_with_different_classes_give_no_combined_phase(tmp_path, model_dir):
+    from conftest import write_ct25d
+
+    m = tmp_path / "model"
+    shutil.copytree(model_dir, m)
+    write_ct25d(m / "phase_L3.pt", "classification", 1, seed=30, n_classes=6)
+    e, _ = run(tmp_path, m)
+    assert "phase" not in e and "phase_name" not in e
+    assert np.isfinite(e.age) and not any(c.endswith("_phase0") for c in e.index)
