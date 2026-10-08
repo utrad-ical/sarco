@@ -3,6 +3,8 @@
 
 import sys
 import argparse
+import json
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,7 +19,6 @@ import torch.nn
 import torch.optim as optim
 import unet
 
-import torchvision.transforms
 
 import readfiles
 import prepcache
@@ -219,6 +220,206 @@ def data_preparation(volume_list : str, labelused, data_augmentation_multiplier,
 
 
 
+def load_presence_threshold(model_file_name):
+    """threshold on the peak likelihood written by --online training, or None"""
+    path = Path(str(model_file_name) + ".json")
+    if not path.exists():
+        return None
+    return float(json.loads(path.read_text())["presence_threshold"])
+
+
+
+SCAN_ROW0 = int(round(Z_MARGIN_MM / INPUT_SLICE_THICKNESS))   # elongated row of slice 0
+BLANK = float(GRAY_CLIP[0])          # what rows outside the scan read as after clipping
+
+
+
+class LumbarWindows(torch.utils.data.Dataset):
+    """
+    INPUT_Z_SIZE-row windows of the cached whole-volume projections, drawn
+    afresh every time, with the scan coverage varied as it is in practice:
+
+    * with probability truncate_prob, the scan is cut to a random craniocaudal
+      range (min_scan_mm up to the whole scan) -- an upper-abdominal dynamic
+      study, say. The level may then lie outside it; its label is then empty
+      and the network has to answer "nowhere" (hence the BCE term).
+    * the window starts at the (cut) first slice, as at test time, or up to
+      max_lead_mm above it (rows of nothing).
+    * a random rectangle is erased (as torchvision's RandomErasing, p = 0.5).
+
+    Cutting rows of the projections is exact: they run along x and y, and
+    rows outside a scan read as the clip floor anyway.
+    """
+
+    def __init__(self, gprojs, lprojs, scan_rows, truncate_prob=0.6,
+                 min_scan_mm=120.0, max_lead_mm=150.0, erase_prob=0.5, augment=True):
+        self.g, self.l, self.scan = gprojs, lprojs, scan_rows
+        self.truncate_prob, self.erase_prob, self.augment = truncate_prob, erase_prob, augment
+        self.min_rows = int(round(min_scan_mm / INPUT_SLICE_THICKNESS))
+        self.max_lead = int(round(max_lead_mm / INPUT_SLICE_THICKNESS))
+
+    def __len__(self):
+        return len(self.g)
+
+    def window(self, i, a, b, s):
+        """rows [s, s + INPUT_Z_SIZE) with only the scan rows [a, b) kept"""
+        g, l = self.g[i], self.l[i]
+        x = np.full((g.shape[0], INPUT_Z_SIZE, g.shape[2]), BLANK, np.float32)
+        y = np.zeros((l.shape[0], INPUT_Z_SIZE, l.shape[2]), np.float32)
+        lo, hi = max(a, s), min(b, s + INPUT_Z_SIZE, g.shape[1])
+        if hi > lo:
+            x[:, lo - s:hi - s] = g[:, lo:hi]
+            y[:, lo - s:hi - s] = l[:, lo:hi]
+        return x, y
+
+    def __getitem__(self, i):
+        rng = np.random.default_rng()
+        a, b = self.scan[i]
+        if self.augment and rng.random() < self.truncate_prob and b - a > self.min_rows:
+            length = int(rng.integers(self.min_rows, b - a + 1))
+            a = int(rng.integers(a, b - length + 1))
+            b = a + length
+        s = a
+        if self.augment and rng.random() < 0.5:
+            s = a - int(rng.integers(0, self.max_lead + 1))
+        x, y = self.window(i, a, b, s)
+        if self.augment and rng.random() < self.erase_prob:
+            area = x.shape[1] * x.shape[2] * rng.uniform(0.02, 0.33)
+            ratio = np.exp(rng.uniform(np.log(0.3), np.log(3.3)))
+            h = int(min(x.shape[1], round(np.sqrt(area * ratio))))
+            w = int(min(x.shape[2], round(np.sqrt(area / ratio))))
+            r0 = int(rng.integers(0, x.shape[1] - h + 1))
+            c0 = int(rng.integers(0, x.shape[2] - w + 1))
+            x[:, r0:r0 + h, c0:c0 + w] = 0.0
+        return torch.from_numpy(x), torch.from_numpy(y)
+
+
+
+def load_online(volume_list, labelused, cache_dir):
+    """cached projections and the scan's row range in the elongated grid, per case"""
+    df = readfiles.read_list(volume_list)
+    gprojs, lprojs, scans = [], [], []
+    for n, (_, line) in enumerate(df.iterrows()):
+        g, l, ztrue, thick = case_projections(line, labelused, cache_dir)
+        info = sitk.ImageFileReader()
+        info.SetFileName(readfiles.paths(line)[0])
+        info.ReadImageInformation()
+        nz = info.GetSize()[2]
+        gprojs.append(g.astype(np.float32))
+        lprojs.append(l.astype(np.uint8))
+        scans.append((SCAN_ROW0, min(g.shape[1], SCAN_ROW0 + int(round(nz * thick / INPUT_SLICE_THICKNESS)))))
+        if (n + 1) % 100 == 0:
+            print(f"loaded {n + 1}/{len(df)}", flush=True)
+    return gprojs, lprojs, scans
+
+
+
+def peak_rows(model, x, device):
+    """(likelihood peak, its row) of each window, as the test path computes them"""
+    with torch.no_grad():
+        res = torch.sigmoid(model(x.to(device))).cpu().numpy()
+    raw = res[:, 0:2].mean(axis=3).mean(axis=1)               # (batch, rows)
+    smooth = scipy.ndimage.gaussian_filter1d(raw, sigma=1, axis=1)
+    return smooth.max(axis=1), smooth.argmax(axis=1)
+
+
+
+def evaluation_windows(scans, lprojs, seed=1):
+    """for each case: the whole scan, a cut keeping the level, a cut without it"""
+    rng = np.random.default_rng(seed)
+    out = []
+    for i, ((a, b), l) in enumerate(zip(scans, lprojs)):
+        rows = np.flatnonzero(l.max(axis=(0, 2)) > 0)
+        if len(rows) == 0:
+            continue
+        r = int(rows.mean())
+        out.append((i, a, b, a, r, True, "whole"))
+        L = int(round(200 / INPUT_SLICE_THICKNESS))                 # a 200 mm scan
+        # the level at least 30 rows (50 mm) inside the cut, the cut inside the scan
+        first, last = max(a, r - L + 30), min(r - 30, b - L)
+        if first <= last:
+            lo = int(rng.integers(first, last + 1))
+            out.append((i, lo, lo + L, lo, r, True, "cut, level in"))
+        if r - 30 - L >= a:                                          # ends above the level
+            out.append((i, r - 30 - L, r - 30, r - 30 - L, r, False, "cut above"))
+        if r + 30 + L <= b:                                          # starts below it
+            out.append((i, r + 30, r + 30 + L, r + 30, r, False, "cut below"))
+    return out
+
+
+
+def evaluate_online(model, ds, device, threshold=None):
+    """peak likelihood and z error (mm) on the evaluation windows of ds"""
+    rows = []
+    for (i, a, b, s, r, present, kind) in evaluation_windows(ds.scan, ds.l):
+        x, _ = ds.window(i, a, b, s)
+        peak, row = peak_rows(model, torch.from_numpy(x)[None], device)
+        rows.append(dict(case=i, kind=kind, present=present, peak=float(peak[0]),
+                         err_mm=float(abs(row[0] + s - r) * INPUT_SLICE_THICKNESS)))
+    df = pd.DataFrame(rows)
+    if threshold is None:
+        # the threshold that best separates present from absent levels
+        cand = np.unique(df.peak)
+        acc = [((df.peak >= t) == df.present).mean() for t in cand]
+        threshold = float(cand[int(np.argmax(acc))])
+    df["called_present"] = df.peak >= threshold
+    return df, threshold
+
+
+
+def train_online(volume_list, val_list, labelused, model_file_name, batch_size, device,
+                 learning_rate, n_epoch, bce_weight, truncate_prob, init_model, cache_dir,
+                 num_workers=8):
+    model = unet.Unet(NUM_FEATURE_IMAGE, NUM_LABEL_IMAGE, 16)
+    if init_model:
+        model.load_state_dict(torch.load(init_model, map_location="cpu"))
+    model = torch.nn.DataParallel(model).to(device)
+
+    volume_list = readfiles.drop_empty_labels(volume_list, labelused, cache_dir)
+    train_ds = LumbarWindows(*load_online(volume_list, labelused, cache_dir), truncate_prob=truncate_prob)
+    val_ds = LumbarWindows(*load_online(val_list, labelused, cache_dir), augment=False)
+    loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                                         drop_last=True, num_workers=num_workers)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999))
+    sched = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epoch)
+    bce = torch.nn.BCEWithLogitsLoss()
+    best, best_state = None, None
+    for epoch in range(n_epoch):
+        model.train()
+        total, n = 0.0, 0
+        for x, y in loader:
+            x, y = x.to(device), y.to(device)
+            logits = model(x)
+            loss = torch.mean(dice_loss(torch.sigmoid(logits), y)) / x.shape[0] + bce_weight * bce(logits, y)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total += float(loss.detach()) * x.shape[0]
+            n += x.shape[0]
+        sched.step()
+        if epoch % 10 == 9 or epoch == n_epoch - 1:
+            model.eval()
+            df, thr = evaluate_online(model, val_ds, device)
+            p = df[df.present]
+            score = ((df.called_present == df.present).mean()
+                     + (p.called_present & (p.err_mm <= 10)).mean())
+            print(f"epoch {epoch:4d}  loss {total / n:.4f}  val: presence acc "
+                  f"{(df.called_present == df.present).mean():.4f} (threshold {thr:.3f}), "
+                  f"level within 10 mm {(p.err_mm <= 10).mean():.4f}, "
+                  f"median error {p.err_mm.median():.1f} mm", flush=True)
+            if best is None or score >= best[0]:
+                best = (score, thr, epoch)
+                best_state = {k: v.detach().cpu().clone() for k, v in model.module.state_dict().items()}
+        else:
+            print(f"epoch {epoch:4d}  loss {total / n:.4f}", flush=True)
+    torch.save(best_state, model_file_name)
+    Path(str(model_file_name) + ".json").write_text(json.dumps(
+        {"presence_threshold": best[1], "epoch": best[2], "truncate_prob": truncate_prob,
+         "bce_weight": bce_weight}, indent=1))
+    print(f"wrote {model_file_name} (epoch {best[2]}, presence threshold {best[1]:.3f})")
+
+
+
 def main(mode : str, 
          volume_list : str, 
          batch_size, 
@@ -239,6 +440,7 @@ def main(mode : str,
     
     if(mode == 'test'):
         model.load_state_dict(torch.load(model_file_name))
+        presence_threshold = load_presence_threshold(model_file_name)
     
     
     
@@ -284,6 +486,7 @@ def main(mode : str,
 
 
         # augmenter
+        import torchvision.transforms     # only this (original) training path needs it
         transform = torchvision.transforms.RandomErasing(p=0.5).to(device)
 
 
@@ -406,6 +609,13 @@ def main(mode : str,
                     # output the slice
                     print("case #%d, real z=%d, detected z=%d" % (case_idx, ztrues[case_idx], argmaxz))
                     
+                    # a level outside the scan: the likelihood peak stays low
+                    # (models trained with --online and a threshold file only)
+                    if presence_threshold is not None and likelihoods[-1] < presence_threshold:
+                        print("case #%d: peak likelihood %.3f < %.3f, out of view"
+                              % (case_idx, likelihoods[-1], presence_threshold))
+                        argmaxz = -1
+
                     zestimates.append(argmaxz)
                     
                     # append likelihooods of -4 ~ +3 z
@@ -488,7 +698,26 @@ if __name__ == '__main__':
                         type=str, default=None)
 
 
+    parser.add_argument('--online', action='store_true',
+                        help='train on windows drawn afresh each epoch, with scan truncation '
+                             '(see LumbarWindows); writes <model>.json with the presence threshold')
+    parser.add_argument('--val_list', default=None, help='--online: validation volume list')
+    parser.add_argument('--truncate_prob', type=float, default=0.6)
+    parser.add_argument('--bce_weight', type=float, default=1.0)
+    parser.add_argument('--init_model', default=None, help='--online: start from these weights')
+    parser.add_argument('--num_workers', type=int, default=8)
+
     args = parser.parse_args()
 
-    main(**args.__dict__)
+    if args.online:
+        if args.mode != 'train' or args.val_list is None:
+            sys.exit('--online is for --mode train and needs --val_list')
+        train_online(args.volume_list, args.val_list, args.labelused, args.model_file_name,
+                     args.batch_size, args.device, args.learning_rate, args.n_epoch,
+                     args.bce_weight, args.truncate_prob, args.init_model, args.cache_dir,
+                     args.num_workers)
+    else:
+        a = {k: v for k, v in args.__dict__.items()
+             if k not in ('online', 'val_list', 'truncate_prob', 'bce_weight', 'init_model', 'num_workers')}
+        main(**a)
 

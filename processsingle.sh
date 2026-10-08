@@ -47,9 +47,9 @@ python bin/lumbar.py --mode test --volume_list $LISTFILE --model_file_name model
 
 python bin/lumbar.py --mode test --volume_list $LISTFILE --model_file_name model/l3_lumbar.ckpt --output_file_name $WORKDIR_L3/l3.txt --labelused 2 --device cuda --cache_dir $CACHEDIR
 
-python bin/lumbarmodifier.py --mode test --volume_list $LISTFILE --device=cuda --model_file_name=model/l1_modifier.ckpt --input_file_name=$WORKDIR_L1/l1.txt --output_file_name=$WORKDIR_L1/l1mod.txt --labelused 1 --cache_dir $CACHEDIR
+python bin/lumbarmodifier.py --mode passthrough --volume_list $LISTFILE --input_file_name=$WORKDIR_L1/l1.txt --output_file_name=$WORKDIR_L1/l1mod.txt
 
-python bin/lumbarmodifier.py --mode test --volume_list $LISTFILE --device=cuda --model_file_name=model/l3_modifier.ckpt --input_file_name=$WORKDIR_L3/l3.txt --output_file_name=$WORKDIR_L3/l3mod.txt --labelused 2 --cache_dir $CACHEDIR
+python bin/lumbarmodifier.py --mode passthrough --volume_list $LISTFILE --input_file_name=$WORKDIR_L3/l3.txt --output_file_name=$WORKDIR_L3/l3mod.txt
 
 python bin/sarcosegmentation.py --mode test --volume_list_file=$WORKDIR_L1/l1mod.txt --z_list_file=$WORKDIR_L1/l1mod.txt --device cuda --workdir=$WORKDIR_L1 --model_file_name=model/l1_segmentation.ckpt --logfilepath=$WORKDIR_L1/log.txt --resultdir=$RESULTDIR --desc=L1 --cache_dir $CACHEDIR
 

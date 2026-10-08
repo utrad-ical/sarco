@@ -15,11 +15,6 @@ import torch
 import torch.nn
 import torch.optim as optim
 
-import torchvision.models.densenet
-import torchvision.models.resnet
-
-import torchvision.transforms
-
 import readfiles
 import prepcache
 import volumeresampler
@@ -27,10 +22,12 @@ import volumeresampler
 
 
 
-transform = torchvision.transforms.Compose(
-    [torchvision.transforms.RandomErasing(p=0.5),
-     torchvision.transforms.RandomAffine(degrees=5.0)]
-)
+def train_transform():
+    import torchvision.transforms
+    return torchvision.transforms.Compose(
+        [torchvision.transforms.RandomErasing(p=0.5),
+         torchvision.transforms.RandomAffine(degrees=5.0)]
+    )
 
 
 
@@ -231,7 +228,44 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
 
 
 
-def main(mode : str, 
+def volume_geometry(volume_list : str):
+    '''(number of slices, slice spacing) of each volume, from the headers alone'''
+    out = []
+    for (_, line) in readfiles.read_list(volume_list).iterrows():
+        info = sitk.ImageFileReader()
+        info.SetFileName(readfiles.paths(line)[0])
+        info.ReadImageInformation()
+        out.append((info.GetSize()[2], info.GetSpacing()[2]))
+    return out
+
+
+
+def passthrough(volume_list : str, input_file_name : str, output_file_name : str, edge_mm : float):
+    '''
+    lumbar.py's z as the final level, without the classifier: on the test split
+    the classifier moved a correct z by one slice in 11-17% of cases, while a
+    lumbar.py model trained with --online is exact in 97-99%. a level within
+    edge_mm of the first or last slice is taken as out of view: when the level
+    lies just beyond the scan, the neighbouring vertebra is found near the edge.
+    '''
+    df = pd.read_csv(input_file_name, encoding='shift_jis')
+    zs = np.array(df['{z_estimated}']).astype(int)
+    likelihoods = np.array(df['{likelihood}']).astype(float)
+    zs[likelihoods < 0.00001] = -1 # not detected
+    for i, (zsize, zspacing) in enumerate(volume_geometry(volume_list)):
+        edge = max(1, int(round(edge_mm / zspacing)))
+        if zs[i] >= 0 and not (edge <= zs[i] < zsize - edge):
+            print(f"case #{i}: z={zs[i]} is within {edge_mm} mm of the edge of the "
+                  f"volume ({zsize} slices); treated as out of view")
+            zs[i] = -1
+    df["{z_modified}"] = zs
+    df["{likelihoods_modified}"] = np.where(zs >= 0, likelihoods, -1000.0)
+    print(df)
+    df.iloc[:,0:].to_csv(output_file_name, encoding='shift-jis')
+
+
+
+def main(mode : str,
          volume_list : str, 
          batch_size, 
          device : str, 
@@ -242,9 +276,15 @@ def main(mode : str,
          output_file_name : str,
          n_epoch : int,
          labelused : int,
-         cache_dir : str = None):
-    
-    # build a model
+         cache_dir : str = None,
+         edge_mm : float = 10.0):
+
+    if mode == 'passthrough':
+        passthrough(volume_list, input_file_name, output_file_name, edge_mm)
+        return
+
+    # build a model (torchvision only here: passthrough runs without it)
+    import torchvision.models
     model = torchvision.models.densenet121(num_classes = 2)
     #model = torchvision.models.resnet50(num_classes = 2)
     
@@ -292,6 +332,7 @@ def main(mode : str,
 
 
         weight = torch.tensor((0.05,0.95)).to(device)
+        transform = train_transform()
 
 
 
@@ -378,12 +419,7 @@ def main(mode : str,
                 base_index += batchsz
                 
         # number of slices of each volume, for the edge rule below
-        zsizes = []
-        for (_, line) in readfiles.read_list(volume_list).iterrows():
-            info = sitk.ImageFileReader()
-            info.SetFileName(readfiles.paths(line)[0])
-            info.ReadImageInformation()
-            zsizes.append(info.GetSize()[2])
+        zsizes = [n for n, _ in volume_geometry(volume_list)]
 
         # reconstruction
         zestimates = np.ndarray((num_cases))
@@ -432,8 +468,8 @@ if __name__ == '__main__':
         description='Lumbar detection modifier',
         add_help=True)
 
-    parser.add_argument('--mode', help="train or test", 
-                        type=str, choices=['train', 'test'],  default='train')
+    parser.add_argument('--mode', help="train, test, or passthrough (lumbar.py's z with the edge rule, no model)",
+                        type=str, choices=['train', 'test', 'passthrough'],  default='train')
     parser.add_argument('--volume_list',
                         help='File path list of training/test image data',
                         type=str, required=True)
@@ -467,6 +503,9 @@ if __name__ == '__main__':
     parser.add_argument('--cache_dir',
                         help='directory to cache per-case preprocessing in (default: no cache)',
                         type=str, default=None)
+    parser.add_argument('--edge_mm',
+                        help='passthrough: a level this close to the first or last slice is out of view (default 10)',
+                        type=float, default=10.0)
 
 
     args = parser.parse_args()

@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir einops tqdm
 # ct25d-regressor for the age / phase / body-size estimates (bin/estimate.py),
 # pinned to a commit (a tarball, so the image needs no git); --no-deps keeps
 # the image's torch
-ARG CT25D_COMMIT=6a78002a4c1ba6704b4b85ffe67bfdc6794b25ce
+ARG CT25D_COMMIT=49e0f6ba2b9141eb3a229f45bf7d5b2d8d43a3e1
 RUN pip install --no-cache-dir --no-deps \
     "https://github.com/hanaokalog/ct25d-regressor/archive/${CT25D_COMMIT}.tar.gz"
 

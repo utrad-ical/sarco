@@ -1,0 +1,6 @@
+{
+ "presence_threshold": 0.2582656741142273,
+ "epoch": 299,
+ "truncate_prob": 0.6,
+ "bce_weight": 1.0
+}

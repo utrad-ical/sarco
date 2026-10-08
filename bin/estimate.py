@@ -157,26 +157,33 @@ def main(argv=None):
             print(f"[estimate] {path} not found; skipped")
             return
         labels = [inputs[lv][0] for lv in LEVELS]
-        if not all(lab is not None and np.any(sitk.GetArrayViewFromImage(lab) > 0)
-                   for lab in labels):
-            print("[estimate] body size needs both L1 and L3; skipped")
-            return
+        present = [lab is not None and bool(np.any(sitk.GetArrayViewFromImage(lab) > 0))
+                   for lab in labels]
         from ct25d.bodysize import (BodySizeGeometry, level_z_mm, load_bodysize,
                                     predict_bodysize, prepare_case)
         from ct25d.geometry import with_direction
         model, stds, cfg, scales, _ = load_bodysize(path, map_location=device)
+        # a model trained with level dropping (p_drop) also works with one level
+        one_level_ok = float(cfg.get("p_drop", 0.0)) > 0
+        if not all(present) and not (one_level_ok and any(present)):
+            print("[estimate] body size needs " + ("L1 or L3" if one_level_ok else
+                  "both L1 and L3") + "; skipped")
+            return
         g = cfg["geometry"]
         geometry = BodySizeGeometry(**{k: (tuple(v) if k == "window" else v)
                                        for k, v in g.items()})
         # the slices are head first here (orientation.py), so the frame is
         # set from the index order rather than from the header's z direction
-        g, l1 = with_direction(gray, labels[0], INDEX_ORDER)
-        _, l3 = with_direction(gray, labels[1], INDEX_ORDER)
+        z = [None, None]
+        for k, lab in enumerate(labels):
+            if present[k]:
+                z[k] = level_z_mm(with_direction(gray, lab, INDEX_ORDER)[1])
+        g_im, _ = with_direction(gray, labels[present.index(True)], INDEX_ORDER)
         mask = prepcache.cached(args.cache_dir, "trunk_mask",
                                 {"gray": prepcache.file_signature(args.gray)},
                                 lambda: {"mask": extract_trunk.trunk_mask(gray)})["mask"]
-        case = prepare_case(g, mask.astype(bool), level_z_mm(l1), level_z_mm(l3),
-                            geometry=geometry)
+        case = prepare_case(g_im, mask.astype(bool), z[0], z[1], geometry=geometry)
+        out["body_n_levels"] = int(sum(present))
         res = predict_bodysize(model, stds, scales, [case], cfg["targets"], device=device)
         for t, (m, s, lo, hi) in res.items():
             out.update({t: float(m[0]), t + "_sigma": float(s[0]),
