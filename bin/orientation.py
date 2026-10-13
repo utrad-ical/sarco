@@ -176,12 +176,25 @@ def train(args):
     min_rows = int(round(args.min_mm / ROW_MM))
 
     def sample(feat, flip, length=None):
+        """Random craniocaudal crop; optionally a narrower field of view (columns
+        outside a random band set to air, as in a smaller reconstruction) and the
+        crop placed at a random row of the window, the rest filled as empty
+        (validity 0), so the model does not rely on the scan starting at row 0."""
         n = feat.shape[1]
         length = min(n, length or int(rng.integers(min_rows, WINDOW_ROWS + 1)))
         start = int(rng.integers(0, n - length + 1))
-        x = window_input(feat, start, length)
+        part = feat[:, start:start + length].copy()
         if flip:
-            x[:4, :length] = x[:4, :length][:, ::-1]
+            part = part[:, ::-1]
+        if args.fov_crop_prob and rng.random() < args.fov_crop_prob:
+            keep = int(rng.integers(int(COLS * args.fov_min), COLS + 1))
+            c0 = int(rng.integers(0, COLS - keep + 1))
+            part[:, :, :c0] = 0.0
+            part[:, :, c0 + keep:] = 0.0
+        offset = int(rng.integers(0, WINDOW_ROWS - length + 1)) if args.z_fill else 0
+        x = np.zeros((5, WINDOW_ROWS, COLS), np.float32)
+        x[:4, offset:offset + length] = part
+        x[4, offset:offset + length] = 1.0
         if rng.random() < 0.5:
             x = x[:, :, ::-1]                       # left-right: irrelevant here
         return x.copy()
@@ -261,6 +274,12 @@ def main(argv=None):
     t.add_argument("--epochs", type=int, default=30)
     t.add_argument("--batch-size", type=int, default=32)
     t.add_argument("--min-mm", type=float, default=100.0)
+    t.add_argument("--fov-crop-prob", type=float, default=0.0,
+                   help="probability of a narrower field of view (augmentation)")
+    t.add_argument("--fov-min", type=float, default=0.6,
+                   help="narrowest field of view kept, as a fraction of the 512 mm columns")
+    t.add_argument("--z-fill", action="store_true",
+                   help="place each crop at a random row of the window, the rest empty")
     t.add_argument("--device", default="cuda")
     t.add_argument("--seed", type=int, default=0)
     args = p.parse_args(argv)
