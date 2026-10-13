@@ -173,3 +173,6 @@ train_temp
 *.ckpt
 model/*.ckpt
 input
+
+# real patient data placed next to the code (never commit)
+additional_train_data/
