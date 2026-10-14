@@ -149,6 +149,7 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
         else:
             label = prepcache.cached(cache_dir, "modifier_label",
                                      {"label": prepcache.file_signature(label_path),
+                                      **readfiles.flip_key(line),
                                       "gray_geometry": [list(info.GetSize()), list(info.GetSpacing())],
                                       "labelused": labelused},
                                      lambda: label_presence(read()[0], read()[1], labelused))
@@ -198,6 +199,7 @@ def data_preparation(volume_list : str, labelused : int, istest : bool, inputzfi
         else:
             window = prepcache.cached(cache_dir, "modifier_gray",
                                       {"gray": prepcache.file_signature(gray_path),
+                                       **readfiles.flip_key(line),
                                        "start": startindexz, "end": endindexz,
                                        "clip": GRAY_CLIP},
                                       lambda: {"window": gray_window(read()[0], startindexz, endindexz)})

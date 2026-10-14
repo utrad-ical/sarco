@@ -140,6 +140,7 @@ def case_projections(line, labelused, cache_dir = None):
 
     gray = prepcache.cached(cache_dir, "lumbar_gray",
                             {"gray": prepcache.file_signature(gray_path),
+                             **readfiles.flip_key(line),
                              "z_margin_mm": Z_MARGIN_MM,
                              "voxel_size": ELONGATED_VOXEL_SIZE,
                              "matrix_size": ELONGATED_MATRIX_SIZE,
@@ -154,6 +155,7 @@ def case_projections(line, labelused, cache_dir = None):
     else:
         label = prepcache.cached(cache_dir, "lumbar_label",
                                  {"label": prepcache.file_signature(label_path),
+                                  **readfiles.flip_key(line),
                                   "labelused": labelused,
                                   "z_margin_mm": Z_MARGIN_MM,
                                   "voxel_size": ELONGATED_VOXEL_SIZE,

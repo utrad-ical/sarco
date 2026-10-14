@@ -8,7 +8,42 @@ import prepcache
 
 
 
+def flipped(line) -> bool:
+    '''True when the list row asks for the slices reversed: a "{flip}" column of
+    1 / true. Used for training on volumes stored feet first (the pipeline
+    itself reverses those in bin/orientation.py); the header is kept.'''
+    if "{flip}" not in line:
+        return False
+    v = line["{flip}"]
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes")
+    return bool(v) and not pd.isna(v)
+
+
+
+def flip_key(line) -> dict:
+    '''the extra cache key of a reversed row ({} otherwise, so old caches stay valid)'''
+    return {"flip": True} if flipped(line) else {}
+
+
+
+def reverse_z(image):
+    out = sitk.GetImageFromArray(sitk.GetArrayFromImage(image)[::-1].copy(),
+                                 isVector=image.GetNumberOfComponentsPerPixel() > 1)
+    out.CopyInformation(image)
+    return out
+
+
+
 def readone(line):
+    gray, label = _readone(line)
+    if flipped(line):
+        gray, label = reverse_z(gray), reverse_z(label)
+    return (gray, label)
+
+
+
+def _readone(line):
     filepath_gray = line["{volume_name}"]
     
     if "{label_volume_name}" in line:

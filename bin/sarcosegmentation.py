@@ -187,6 +187,7 @@ def data_preparation(volume_list : str, labelused, z_list = None, tor_slice_diff
         # the volumes are read only on a cache miss
         prepared = prepcache.cached(cache_dir, "seg_slice",
                                     {"gray": prepcache.file_signature(gray_path),
+                                     **readfiles.flip_key(line),
                                      "label": None if label_path is None else prepcache.file_signature(label_path),
                                      "labelused": labelused,
                                      "usingz": None if usingz is None else float(usingz),
@@ -290,7 +291,8 @@ def visual_volume_creation(volume_list : str, estim_labels : np.array, zs : list
             # depends on the gray volume only, so L1 and L3 share one
             gray_path, _ = readfiles.paths(volume_list_lines[i])
             mask = prepcache.cached(cache_dir, "trunk_mask",
-                                    {"gray": prepcache.file_signature(gray_path)},
+                                    {"gray": prepcache.file_signature(gray_path),
+                                     **readfiles.flip_key(volume_list_lines[i])},
                                     lambda: {"mask": extract_trunk.trunk_mask(grayVolume)})["mask"]
             (tri_volume, tri_png, metrics) = sarcocalculate.calculate(grayVolume, detectedLabelVolume, mask)
             
