@@ -1,7 +1,7 @@
 {
   "type": "CAD",
   "pluginName": "Sarcopenia",
-  "version": "8.3.1",
+  "version": "8.4.0",
   "description": "Evaluates sarcopenia from torso CT",
   "icon": {
     "glyph": "calc",

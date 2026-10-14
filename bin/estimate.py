@@ -11,10 +11,12 @@ Estimates from the L1/L3 results with ct25d-regressor checkpoints in model/:
            split)
   body     bodysize.pt: height and weight from the trunk projections and the
            L1/L3 planes
-  phase-0  phase_correction.json: MSMD, meanVAT, meanSAT, cortical_density and
-           medullary_density converted to the plain-CT equivalent with the
-           linear formula of the estimated phase (unchanged for phase 0); only
-           when the file's phase list matches the phase models' classes
+  phase-0  phase_correction.json: MSMD, meanVAT, meanSAT, cortical_density,
+           medullary_density and SASHI converted to the plain-CT equivalent
+           with the linear formula of the estimated phase (unchanged for phase
+           0); only when the file's phase list matches the phase models'
+           classes. SASHI is a fraction: 0 is a value, the result is kept in
+           [0, 1]
 
 A missing checkpoint, or a level without a result, skips that estimate and the
 rest still runs. Writes <resultdir>/__estimates.csv (one row; shift_jis like
@@ -47,7 +49,10 @@ PHASE_SCHEMES = {
         4: "venous", 5: "equilibrium"},
 }
 PHASE_NAMES = PHASE_SCHEMES[5]
-CORRECTED = ("MSMD", "meanVAT", "meanSAT", "cortical_density", "medullary_density")
+CORRECTED = ("MSMD", "meanVAT", "meanSAT", "cortical_density", "medullary_density", "SASHI")
+# fractions (SASHI: muscle below -30 HU): 0 is a real value when the level has a
+# result (SMA > 0), and the corrected value stays in [0, 1]
+FRACTIONS = ("SASHI",)
 AGE_MODELS = [("marrow", "L1"), ("marrow", "L3"), ("muscle", "L1"), ("muscle", "L3")]
 # direction cosines that make physical z follow the (head-first) index order
 INDEX_ORDER = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0)
@@ -225,7 +230,9 @@ def main(argv=None):
                 continue
             for v in CORRECTED:
                 x = row.get(f"{lv}_{v}")
-                if x is None or not np.isfinite(x) or x == 0:
+                if x is None or not np.isfinite(x):
+                    continue
+                if x == 0 and (v not in FRACTIONS or not row.get(f"{lv}_SMA", 0) > 0):
                     continue          # 0 is sarco's value for an empty result
                 if k == 0:
                     y = float(x)
@@ -234,6 +241,8 @@ def main(argv=None):
                     if c is None:
                         continue
                     y = c["a"] + c["b"] * float(x)
+                if v in FRACTIONS:
+                    y = min(max(y, 0.0), 1.0)
                 out[f"{lv}_{v}_phase0"] = y
 
     orient = resultdir / "__orientation.json"

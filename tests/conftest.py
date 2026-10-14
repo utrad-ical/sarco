@@ -146,7 +146,7 @@ def model_dir(tmp_path_factory):
     coef = {lv: {v: {str(k): {"a": 10.0 * k, "b": 1.0 + k / 10, "n": 100}
                      for k in range(1, 5)}
                  for v in ("MSMD", "meanVAT", "meanSAT", "cortical_density",
-                           "medullary_density")}
+                           "medullary_density", "SASHI")}
             for lv in ("L1", "L3")}
     (d / "phase_correction.json").write_text(json.dumps({"coefficients": coef}))
     (d / "age_combination.json").write_text(json.dumps({"combined_sigma_scale": 2.0}))

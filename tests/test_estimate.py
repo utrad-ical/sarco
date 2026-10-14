@@ -22,13 +22,13 @@ pytest.importorskip("ct25d")
 
 METRICS = {lv: {"SMA": 100.0, "MSMD": 40.0, "VAT": 50.0, "SAT": 60.0,
                 "meanVAT": -70.0, "meanSAT": -80.0,
-                "cortical_density": 200.0, "medullary_density": 150.0}
+                "cortical_density": 200.0, "medullary_density": 150.0, "SASHI": 0.05}
            for lv in ("L1", "L3")}
 
 
-def run(tmp_path, model_dir, levels=("L1", "L3"), orientation=None):
+def run(tmp_path, model_dir, levels=("L1", "L3"), orientation=None, metrics=METRICS):
     res = tmp_path / "res"
-    gray = write_resultdir(res, make_gray(), levels=levels, metrics=METRICS)
+    gray = write_resultdir(res, make_gray(), levels=levels, metrics=metrics)
     if orientation is not None:
         (res / "__orientation.json").write_text(json.dumps(orientation))
     estimate.main(["--gray", str(gray), "--resultdir", str(res), "--model_dir",
@@ -68,7 +68,28 @@ def test_every_estimate_with_both_levels(tmp_path, model_dir):
                 assert f"{lv}_{v}_phase0" not in e
                 continue
             want = x if k == 0 else 10.0 * k + (1 + k / 10) * x
+            if v in estimate.FRACTIONS:
+                want = min(max(want, 0.0), 1.0)
             assert e[f"{lv}_{v}_phase0"] == pytest.approx(want)
+
+
+def test_sashi_zero_is_a_value_and_the_correction_stays_a_fraction(tmp_path, model_dir):
+    m = {lv: dict(METRICS[lv], SASHI=0.0) for lv in METRICS}
+    e, res = run(tmp_path, model_dir, metrics=m)
+    # SASHI 0 with a result (SMA > 0) is corrected like any value: 10 k + ... -> clipped to 1 for k > 0
+    assert e.L1_SASHI_phase0 == (0.0 if int(e.phase) == 0 else 1.0)
+    table = json.loads((model_dir / "phase_correction.json").read_text())
+    neg = tmp_path / "model_neg"
+    shutil.copytree(model_dir, neg)
+    for lv in table["coefficients"]:
+        for k in table["coefficients"][lv]["SASHI"]:
+            table["coefficients"][lv]["SASHI"][k] = {"a": -0.5, "b": 1.0, "n": 1}
+    (neg / "phase_correction.json").write_text(json.dumps(table))
+    e2, _ = run(tmp_path / "b", neg, metrics={lv: dict(METRICS[lv], SASHI=0.1) for lv in METRICS})
+    assert e2.L1_SASHI_phase0 == (pytest.approx(0.1) if int(e2.phase) == 0 else 0.0)
+    # an empty level (SMA 0) still gives no value
+    e3, _ = run(tmp_path / "c", model_dir, levels=("L1",), metrics=m)
+    assert "L3_SASHI_phase0" not in e3
 
 
 def test_phase_and_age_from_l1_alone(tmp_path, model_dir):
