@@ -249,16 +249,18 @@ def passthrough(volume_list : str, input_file_name : str, output_file_name : str
     lumbar.py model trained with --online is exact in 97-99%. a level within
     edge_mm of the first or last slice is taken as out of view: when the level
     lies just beyond the scan, the neighbouring vertebra is found near the edge.
+    edge_mm <= 0 turns the rule off: any z inside the volume is kept.
     '''
     df = pd.read_csv(input_file_name, encoding='shift_jis')
     zs = np.array(df['{z_estimated}']).astype(int)
     likelihoods = np.array(df['{likelihood}']).astype(float)
     zs[likelihoods < 0.00001] = -1 # not detected
     for i, (zsize, zspacing) in enumerate(volume_geometry(volume_list)):
-        edge = max(1, int(round(edge_mm / zspacing)))
+        edge = max(1, int(round(edge_mm / zspacing))) if edge_mm > 0 else 0
         if zs[i] >= 0 and not (edge <= zs[i] < zsize - edge):
             print(f"case #{i}: z={zs[i]} is within {edge_mm} mm of the edge of the "
-                  f"volume ({zsize} slices); treated as out of view")
+                  f"volume ({zsize} slices); treated as out of view" if edge else
+                  f"case #{i}: z={zs[i]} is outside the volume ({zsize} slices)")
             zs[i] = -1
     df["{z_modified}"] = zs
     df["{likelihoods_modified}"] = np.where(zs >= 0, likelihoods, -1000.0)
@@ -506,7 +508,7 @@ if __name__ == '__main__':
                         help='directory to cache per-case preprocessing in (default: no cache)',
                         type=str, default=None)
     parser.add_argument('--edge_mm',
-                        help='passthrough: a level this close to the first or last slice is out of view (default 10)',
+                        help='passthrough: a level this close to the first or last slice is out of view (default 10; 0 = off)',
                         type=float, default=10.0)
 
 

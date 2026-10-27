@@ -47,3 +47,10 @@ def test_out_of_view_from_lumbar_or_beyond_the_volume_stays_out(run):
 def test_edge_margin_is_in_mm(run):
     assert run(3, edge_mm=20.0)[0] == -1
     assert run(4, edge_mm=20.0)[0] == 4
+
+
+def test_edge_rule_off(run):
+    assert run(0, edge_mm=0.0)[0] == 0
+    assert run(N_Z - 1, edge_mm=0.0)[0] == N_Z - 1
+    assert run(N_Z, edge_mm=0.0)[0] == -1
+    assert run(-1, edge_mm=0.0) == (-1, -1000.0)
