@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below (and the paper, once published)."
+title: "sarco: sarcopenia analysis of trunk CT (CIRCUS CAD plug-in)"
+type: software
+authors:
+  - family-names: Hanaoka
+    given-names: Shouhei
+    affiliation: "Department of Radiology, The University of Tokyo Hospital"
+    orcid: "https://orcid.org/0000-0002-7496-1651"
+  - family-names: Miki
+    given-names: Soichiro
+    affiliation: "Department of Computational Diagnostic Radiology and Preventive Medicine, The University of Tokyo Hospital"
+  - family-names: Gonoi
+    given-names: Wataru
+    affiliation: "Department of Radiology, The University of Tokyo Hospital"
+  - family-names: Nomura
+    given-names: Yukihiro
+    affiliation: "Department of Computational Diagnostic Radiology and Preventive Medicine, The University of Tokyo Hospital"
+  - family-names: Abe
+    given-names: Osamu
+    affiliation: "Department of Radiology, The University of Tokyo Hospital"
+version: "8.5.0"
+license: CC-BY-NC-4.0
+repository-code: "https://github.com/utrad-ical/sarco"
+keywords:
+  - sarcopenia
+  - computed tomography
+  - body composition
+  - deep learning
