@@ -64,10 +64,13 @@ def test_every_estimate_with_both_levels(tmp_path, model_dir):
     k = int(e.phase)
     for lv in ("L1", "L3"):
         for v, x in METRICS[lv].items():
-            if v not in estimate.CORRECTED:
+            if v not in estimate.CORRECTED + estimate.AREAS:
                 assert f"{lv}_{v}_phase0" not in e
                 continue
-            want = x if k == 0 else 10.0 * k + (1 + k / 10) * x
+            if v in estimate.AREAS:
+                want = x if k == 0 else np.exp(k / 10) * x ** (1 - k / 20)
+            else:
+                want = x if k == 0 else 10.0 * k + (1 + k / 10) * x
             if v in estimate.FRACTIONS:
                 want = min(max(want, 0.0), 1.0)
             assert e[f"{lv}_{v}_phase0"] == pytest.approx(want)
@@ -221,3 +224,14 @@ def test_phase_models_with_different_classes_give_no_combined_phase(tmp_path, mo
     e, _ = run(tmp_path, m)
     assert "phase" not in e and "phase_name" not in e
     assert np.isfinite(e.age) and not any(c.endswith("_phase0") for c in e.index)
+
+
+def test_area_conversion_needs_its_coefficients_and_a_nonempty_area(tmp_path, model_dir):
+    # a correction file without area formulas (v8.5): no area phase-0 values, the HU ones as before
+    e, _ = run(tmp_path, six_phase_models(tmp_path, model_dir, 6))
+    assert np.isfinite(e.L1_MSMD_phase0)
+    assert not any(f"{lv}_{v}_phase0" in e for lv in ("L1", "L3") for v in estimate.AREAS)
+    # an area of 0 is an empty result: no value; the power form stays positive for small areas
+    m = {lv: dict(METRICS[lv], VAT=0.0, SAT=0.5) for lv in METRICS}
+    e2, _ = run(tmp_path / "b", model_dir, metrics=m)
+    assert "L1_VAT_phase0" not in e2 and e2.L1_SAT_phase0 > 0

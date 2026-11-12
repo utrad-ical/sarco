@@ -19,7 +19,7 @@ authors:
   - family-names: Abe
     given-names: Osamu
     affiliation: "Department of Radiology, The University of Tokyo Hospital"
-version: "8.5.0"
+version: "8.6.0"
 license: CC-BY-NC-4.0
 repository-code: "https://github.com/utrad-ical/sarco"
 keywords:

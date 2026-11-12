@@ -148,6 +148,11 @@ def model_dir(tmp_path_factory):
                  for v in ("MSMD", "meanVAT", "meanSAT", "cortical_density",
                            "medullary_density", "SASHI")}
             for lv in ("L1", "L3")}
-    (d / "phase_correction.json").write_text(json.dumps({"coefficients": coef}))
+    # areas, power form: value0 = exp(a) value_k ** b with a = k / 10, b = 1 - k / 20
+    for lv in ("L1", "L3"):
+        coef[lv].update({v: {str(k): {"a": k / 10, "b": 1 - k / 20, "n": 100} for k in range(1, 5)}
+                         for v in ("SMA", "VAT", "SAT")})
+    (d / "phase_correction.json").write_text(json.dumps(
+        {"coefficients": coef, "forms": {"SMA": "power", "VAT": "power", "SAT": "power"}}))
     (d / "age_combination.json").write_text(json.dumps({"combined_sigma_scale": 2.0}))
     return d

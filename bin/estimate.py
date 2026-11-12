@@ -53,6 +53,10 @@ CORRECTED = ("MSMD", "meanVAT", "meanSAT", "cortical_density", "medullary_densit
 # fractions (SASHI: muscle below -30 HU): 0 is a real value when the level has a
 # result (SMA > 0), and the corrected value stays in [0, 1]
 FRACTIONS = ("SASHI",)
+# areas (mm2): converted when phase_correction.json has their coefficients, by the
+# formula named in its "forms" ({"VAT": "power", ...}): power: value0 = exp(a) * value_k ** b
+# (positive, through the origin); a variable not listed there is linear: a + b * value_k
+AREAS = ("SMA", "VAT", "SAT")
 AGE_MODELS = [("marrow", "L1"), ("marrow", "L3"), ("muscle", "L1"), ("muscle", "L3")]
 # direction cosines that make physical z follow the (head-first) index order
 INDEX_ORDER = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0)
@@ -223,24 +227,32 @@ def main(argv=None):
                   f"models {int(out['phase_n_classes'])}; no phase-0 values")
             return
         coef = table["coefficients"]
+        forms = table.get("forms", {})
         k = int(out["phase"])
         for lv in LEVELS:
             row = inputs[lv][2]
             if row is None:
                 continue
-            for v in CORRECTED:
+            for v in CORRECTED + AREAS:
+                if v in AREAS and v not in coef.get(lv, {}):
+                    continue          # a file without area formulas (v8.5 and earlier)
                 x = row.get(f"{lv}_{v}")
                 if x is None or not np.isfinite(x):
                     continue
                 if x == 0 and (v not in FRACTIONS or not row.get(f"{lv}_SMA", 0) > 0):
                     continue          # 0 is sarco's value for an empty result
+                if v in AREAS and x < 0:
+                    continue
                 if k == 0:
                     y = float(x)
                 else:
                     c = coef.get(lv, {}).get(v, {}).get(str(k))
                     if c is None:
                         continue
-                    y = c["a"] + c["b"] * float(x)
+                    if forms.get(v, "linear") == "power":
+                        y = float(np.exp(c["a"]) * float(x) ** c["b"])
+                    else:
+                        y = c["a"] + c["b"] * float(x)
                 if v in FRACTIONS:
                     y = min(max(y, 0.0), 1.0)
                 out[f"{lv}_{v}_phase0"] = y
