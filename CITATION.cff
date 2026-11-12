@@ -10,15 +10,23 @@ authors:
   - family-names: Miki
     given-names: Soichiro
     affiliation: "Department of Computational Diagnostic Radiology and Preventive Medicine, The University of Tokyo Hospital"
+    orcid: "https://orcid.org/0000-0001-6365-6531"
   - family-names: Gonoi
     given-names: Wataru
     affiliation: "Department of Radiology, The University of Tokyo Hospital"
+    orcid: "https://orcid.org/0000-0002-5018-4683"
   - family-names: Nomura
     given-names: Yukihiro
     affiliation: "Department of Computational Diagnostic Radiology and Preventive Medicine, The University of Tokyo Hospital"
+    orcid: "https://orcid.org/0000-0001-6471-9936"
+  - family-names: Takenaga
+    given-names: Tomomi
+    affiliation: "Department of Radiology, The University of Tokyo Hospital"
+    orcid: "https://orcid.org/0000-0001-7198-1588"
   - family-names: Abe
     given-names: Osamu
     affiliation: "Department of Radiology, The University of Tokyo Hospital"
+    orcid: "https://orcid.org/0000-0002-1180-2629"
 version: "8.6.0"
 license: CC-BY-NC-4.0
 repository-code: "https://github.com/utrad-ical/sarco"

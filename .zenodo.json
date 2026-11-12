@@ -4,12 +4,18 @@
   "description": "Automatic L1/L3 localisation, skeletal muscle segmentation, sarcopenia measures (SMA, MSMD, VAT, SAT), contrast-phase estimation with conversion to non-contrast equivalent values, and age / height / weight estimation from trunk CT. Source code and trained model weights. For research use only.",
   "creators": [
     {"name": "Hanaoka, Shouhei", "affiliation": "Department of Radiology, The University of Tokyo Hospital", "orcid": "0000-0002-7496-1651"},
-    {"name": "Miki, Soichiro", "affiliation": "Department of Computational Diagnostic Radiology and Preventive Medicine, The University of Tokyo Hospital"},
-    {"name": "Gonoi, Wataru", "affiliation": "Department of Radiology, The University of Tokyo Hospital"},
-    {"name": "Nomura, Yukihiro", "affiliation": "Department of Computational Diagnostic Radiology and Preventive Medicine, The University of Tokyo Hospital"},
-    {"name": "Abe, Osamu", "affiliation": "Department of Radiology, The University of Tokyo Hospital"}
+    {"name": "Miki, Soichiro", "affiliation": "Department of Computational Diagnostic Radiology and Preventive Medicine, The University of Tokyo Hospital", "orcid": "0000-0001-6365-6531"},
+    {"name": "Gonoi, Wataru", "affiliation": "Department of Radiology, The University of Tokyo Hospital", "orcid": "0000-0002-5018-4683"},
+    {"name": "Nomura, Yukihiro", "affiliation": "Department of Computational Diagnostic Radiology and Preventive Medicine, The University of Tokyo Hospital", "orcid": "0000-0001-6471-9936"},
+    {"name": "Takenaga, Tomomi", "affiliation": "Department of Radiology, The University of Tokyo Hospital", "orcid": "0000-0001-7198-1588"},
+    {"name": "Abe, Osamu", "affiliation": "Department of Radiology, The University of Tokyo Hospital", "orcid": "0000-0002-1180-2629"}
   ],
   "license": "cc-by-nc-4.0",
   "access_right": "open",
-  "keywords": ["sarcopenia", "computed tomography", "body composition", "deep learning"]
+  "keywords": [
+    "sarcopenia",
+    "computed tomography",
+    "body composition",
+    "deep learning"
+  ]
 }
